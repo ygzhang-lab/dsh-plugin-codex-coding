@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-codex-coding",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.1-rc.3",
   "description": "DSH Codex 风格的 Coding 插件：交付契约、Consult/Review/Codex 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。Codex-style coding preset for DeepSeek Harness with consultation/review/code modes, a delivery contract, apply_patch editing, and adaptive reasoning.",
   "type": "module",
   "main": "./lib/index.js",
@@ -28,6 +28,7 @@
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "dsh": {
