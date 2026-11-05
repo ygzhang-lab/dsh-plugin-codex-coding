@@ -1,0 +1,93 @@
+# dsh-plugin-coding bundle: one passive Host settings service plus the Coding preset.
+#
+# The Host row only owns settings and the Web configuration page. All agent
+# behavior—prompt, tools, skills, reasoning policy—is mounted by the Coding
+# preset, so simply installing this bundle changes no existing session.
+- insert:
+    - id: dsh-plugin-coding
+      name: 'dsh-plugin-coding'
+      config:
+        reasoning: auto
+        localSkills: true
+        disabledPlugins: []
+
+    - id: preset-coding
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: coding
+        name: 'Coding 模式'
+        description: >-
+          DSH Codex 风格 Coding 插件：先检查、用 todo 规划、小步修改、运行最窄验证并简洁汇报。
+          A Codex-style coding agent for DSH: inspect first, plan with a todo list,
+          make surgical changes, run the narrowest verification, and report concisely.
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are Codex, a coding agent based on the {{model}} model, running in the DeepSeek Harness (DSH).
+              includeRuntimeContext: true
+              # The full operating contract, task playbooks, and delivery rules
+              # are registered as the `coding:contract` system-prompt section by
+              # dsh-plugin-coding/preset. Keeping identity here and workflow there avoids
+              # two competing prompts that drift apart.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: false
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # Local skills are always composed; the settings policy hides the
+          # skill tool (and therefore retires the catalog) when disabled.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          - id: dsh-plugin-coding-preset
+            name: 'dsh-plugin-coding/preset'
+
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  auto: false
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
