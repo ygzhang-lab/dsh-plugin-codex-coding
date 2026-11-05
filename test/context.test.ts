@@ -10,6 +10,11 @@ import type { CodingOptions } from '../src/config.js'
 const execFileAsync = promisify(execFile)
 const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
 
+/** Snapshot text renders repository-relative paths with forward slashes. */
+function posix(path: string): string {
+  return path.split(/[\\/]/).join('/')
+}
+
 async function temporary(): Promise<string> {
   return realpath(await mkdtemp(join(tmpdir(), 'dsh-plugin-coding-')))
 }
@@ -76,7 +81,7 @@ describe('gatherContext', () => {
       expect(snapshot.checks).toEqual(['pnpm typecheck', 'pnpm test'])
       expect(snapshot.text).toContain(`cwd: ${app}`)
       expect(snapshot.text).toContain(`repo: ${resolve(dir)}`)
-      expect(snapshot.text).toContain(`package: pnpm at ${join('packages', 'app')}`)
+      expect(snapshot.text).toContain(`package: pnpm at ${posix(join('packages', 'app'))}`)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

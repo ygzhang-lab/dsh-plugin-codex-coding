@@ -23,6 +23,10 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
   const listeners = new Map<string, Function>()
   const restrictions: any[] = []
   const warnings: string[] = []
+  const commands: any[] = []
+  const contexts: any[] = []
+  const projections: any[] = []
+  const sections: any[] = []
   const selection = { current: { provider: 'p', model: 'm' } as any, assembled: undefined as any }
   const ctx = {
     get(name: string) {
@@ -31,6 +35,12 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
         return { ensure: async () => input.workingDirectory ?? process.cwd() }
       }
       if (name === 'sessionController') return { selectionFor: () => selection }
+      if (name === 'systemPrompt') {
+        return {
+          section: (section: any) => sections.push(section),
+          context: (context: any) => contexts.push(context),
+        }
+      }
       if (name === 'llm') {
         return {
           resolveModelInfo: async () => ({
@@ -41,6 +51,7 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
       if (name === 'sessionProjections') {
         return {
           stateOf: (_session: unknown, key: string) => key === 'turnBoundary' ? { lastTurn: 1 } : null,
+          register: (definition: any) => { projections.push(definition); return () => {} },
         }
       }
       return undefined
@@ -53,17 +64,58 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
         tools.push(tool)
       },
     },
+    commands: {
+      register(definition: any) {
+        commands.push(definition)
+        return () => {}
+      },
+    },
     logger: { warn: (message: string) => warnings.push(message) },
   }
   apply(ctx)
-  return { tools, listeners, restrictions, warnings, selection }
+  return { tools, listeners, restrictions, warnings, selection, commands, contexts, projections, sections }
 }
 
 describe('Coding preset plugin', () => {
   it('registers the custom tools and the Codex workflow helpers', () => {
     const { tools } = harness({ reasoning: 'auto', localSkills: true, disabledPlugins: [] })
     expect(tools.map((tool) => tool.name)).toEqual(['coding_context', 'coding_reasoning', 'coding_mode'])
-    expect(presetInject).toEqual(expect.arrayContaining(['sessionController', 'llm', 'sessionProjections']))
+    expect(presetInject).toEqual(expect.arrayContaining([
+      'sessionController', 'llm', 'sessionProjections', 'commands',
+    ]))
+  })
+
+  it('registers the conversation card projection, command, and prompt context', () => {
+    const { commands, contexts, projections, sections } = harness({
+      reasoning: 'auto',
+      localSkills: true,
+      disabledPlugins: [],
+    })
+    expect(sections.map((section) => section.name)).toContain('coding:contract')
+    expect(contexts.map((context) => context.name)).toContain('coding:workflow')
+    expect(projections.map((projection) => projection.key)).toContain('codingWorkflow')
+
+    const context = contexts.find((candidate) => candidate.name === 'coding:workflow')
+    expect(context.text()).toContain('Workflow mode: auto')
+
+    const command = commands.find((candidate) => candidate.name === 'workflow')
+    expect(command).toBeDefined()
+    const agent = {}
+    expect(command.handler({ agent, rawInput: 'review' })).toMatchObject({ kind: 'success' })
+    expect(context.text()).toContain('Workflow mode: review')
+    expect(command.handler({ agent }).text).toContain('workflow mode: review')
+    expect(command.handler({ agent, rawInput: 'AUTO' })).toMatchObject({ kind: 'success' })
+    expect(context.text()).toContain('Workflow mode: auto')
+    expect(command.handler({ agent, rawInput: 'plan' })).toMatchObject({ kind: 'error' })
+  })
+
+  it('reaches the prompt after a tool-driven mode switch', async () => {
+    const { tools, contexts } = harness({ reasoning: 'auto', localSkills: true, disabledPlugins: [] })
+    const tool = tools.find((candidate) => candidate.name === 'coding_mode')
+    const agent = { session: { deriveMessages: () => [] } }
+    await tool.execute({ mode: 'consult' }, { agent })
+    const context = contexts.find((candidate) => candidate.name === 'coding:workflow')
+    expect(context.text()).toContain('Workflow mode: consult')
   })
 
   it('classifies the admitted step messages before the request is built', async () => {

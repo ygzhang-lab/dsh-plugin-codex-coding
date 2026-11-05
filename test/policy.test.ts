@@ -183,6 +183,17 @@ describe('normalizeOptions', () => {
   it('falls back to auto for an invalid reasoning value', () => {
     expect(normalizeOptions({ reasoning: 'ultra' as never }).reasoning).toBe('auto')
   })
+
+  it('never lets a stored config disable a core plugin', () => {
+    expect(normalizeOptions({
+      disabledPlugins: [
+        '@deepseek-ai/dsh-tool-fs',
+        '@deepseek-ai/dsh-tool-bash',
+        '@deepseek-ai/dsh-tool-web',
+        '@deepseek-ai/dsh-tool-fs',
+      ],
+    }).disabledPlugins).toEqual(['@deepseek-ai/dsh-tool-web'])
+  })
 })
 
 describe('disabledToolNames', () => {
@@ -201,9 +212,9 @@ describe('disabledToolNames', () => {
       .toEqual(['web_fetch', 'web_search'])
   })
 
-  it('hides apply_patch when the filesystem plugin is disabled', () => {
+  it('ignores a disabled core plugin even when the value was not normalized', () => {
     expect(disabledToolNames({ ...base, disabledPlugins: ['@deepseek-ai/dsh-tool-fs'] }))
-      .toEqual(['apply_patch', 'edit', 'read', 'read_image', 'write'])
+      .toEqual([])
   })
 
   it('deduplicates tools and ignores unknown modules', () => {

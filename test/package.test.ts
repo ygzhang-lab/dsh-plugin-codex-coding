@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
@@ -9,6 +9,17 @@ const root = dirname(fileURLToPath(new URL('.', import.meta.url)))
 
 async function text(path: string): Promise<string> {
   return readFile(join(root, path), 'utf8')
+}
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files: string[] = []
+  for (const entry of entries) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...await sourceFiles(path))
+    else files.push(path)
+  }
+  return files
 }
 
 describe('published bundle', () => {
@@ -24,6 +35,35 @@ describe('published bundle', () => {
     expect(manifest.files).toContain('lib')
     expect(manifest.files).toContain('locale')
     expect(manifest.files).toContain('icon.svg')
+  })
+
+  it('declares host packages as peers and keeps the dsh range explicit', async () => {
+    const manifest = JSON.parse(await text('package.json'))
+    const host = ['@deepseek-ai/cordis', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-tools']
+    for (const name of host) {
+      expect(manifest.dependencies?.[name]).toBeUndefined()
+      expect(typeof manifest.peerDependencies?.[name]).toBe('string')
+    }
+    // schemastery (Config schema) and zod (session projection) are the only
+    // packages the plugin installs for itself.
+    expect(Object.keys(manifest.dependencies)).toEqual(['@deepseek-ai/schemastery', 'zod'])
+    expect(manifest.engines.dsh).toBe('>=0.2.1-rc.5 <0.3.0')
+    expect(manifest.engines.node).toBe('>=24.9.0')
+
+    const declared = new Set([
+      ...Object.keys(manifest.dependencies ?? {}),
+      ...Object.keys(manifest.peerDependencies ?? {}),
+    ])
+    const imported = new Set<string>()
+    for (const file of await sourceFiles(join(root, 'src'))) {
+      if (!file.endsWith('.ts')) continue
+      const source = await readFile(file, 'utf8')
+      for (const match of source.matchAll(/(?:from\s+|import\()['"](@deepseek-ai\/[^'"]+)['"]/g)) {
+        imported.add(match[1])
+      }
+    }
+    expect([...imported].sort()).toEqual([...host, '@deepseek-ai/schemastery'].sort())
+    for (const name of imported) expect(declared.has(name)).toBe(true)
   })
 
   it('composes the Coding preset and its custom plugin', async () => {
