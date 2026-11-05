@@ -6,6 +6,8 @@
 
 发布包名是 `dsh-plugin-coding`，在 DSH 中的插件显示名仍是 **DSH Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-coding](https://github.com/ygzhang-lab/dsh-plugin-coding)。
 
+**版本号**：插件采用 `0.2.<内部流水号>`，只把前两位对齐到 DSH 的 `0.2.x`；第三位是内部构建序号，与 DSH 的补丁号或 rc 号没有对应关系，实际兼容范围以 `engines.dsh` 为准。当前版本 `0.2.1`，详见[版本策略](#版本策略)。
+
 ## 特性
 
 - **交付契约**：固定为「先建立上下文 → 定义完成标准 → 最小修改 → 最窄验证 → 紧凑交付」五段。契约作为独立的 `coding:contract` 系统提示段落，不塞进人格前缀。
