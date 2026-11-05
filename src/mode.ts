@@ -52,3 +52,29 @@ export function describeMode(mode: WorkflowMode): string {
   }
   return `workflow mode: ${mode} (manual override; call coding_mode with "auto" to clear)`
 }
+
+/** Modes accepted by the manual switch surfaces. */
+export const WORKFLOW_MODES: readonly WorkflowMode[] = ['auto', 'consult', 'review', 'code']
+
+/** The session projection the UI card reads; kept here so the Client half does not import zod. */
+export const WORKFLOW_PROJECTION_KEY = 'codingWorkflow'
+
+/** Parse a user-provided mode token; unknown values stay undefined. */
+export function parseWorkflowMode(value: unknown): WorkflowMode | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase()
+  return (WORKFLOW_MODES as readonly string[]).includes(normalized)
+    ? normalized as WorkflowMode
+    : undefined
+}
+
+/**
+ * Model-visible workflow directive. Manual modes carry the same guidance the
+ * `coding_mode` tool returns, so a UI switch reaches the next prompt too.
+ */
+export function workflowPrompt(mode: WorkflowMode): string {
+  if (mode === 'auto') {
+    return 'Workflow mode: auto. Choose Consult, Review, or Code from the current request; the user may switch it from the conversation card.'
+  }
+  return `Workflow mode: ${mode} (manual, chosen by the user for this session).\n${MODE_GUIDANCE[mode].join('\n')}`
+}

@@ -58,6 +58,11 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/** Render a repository-relative path with forward slashes in prompt text. */
+function posix(path: string): string {
+  return path.split(/[\\/]/).join('/')
+}
+
 function inside(parent: string, child: string): boolean {
   const value = relative(resolve(parent), resolve(child))
   return value !== '' && !value.startsWith('..') && !value.startsWith('/')
@@ -258,9 +263,9 @@ export async function gatherContext(
     `cwd: ${resolve(cwd)}`,
     ...root === resolve(cwd) ? [] : [`repo: ${root}`],
     `git: ${branch ?? 'detached-or-no-repo'} | ${changedSummary}`,
-    `instructions: ${instructions.length === 0 ? 'none found; follow the repository conventions' : instructions.join(', ')}`,
+    `instructions: ${instructions.length === 0 ? 'none found; follow the repository conventions' : instructions.map(posix).join(', ')}`,
     `diff: ${diffText(diff, changed)}`,
-    `package: ${packageManager ?? 'none'}${packageDir === null ? '' : ` at ${packageDir}`}`,
+    `package: ${packageManager ?? 'none'}${packageDir === null ? '' : ` at ${posix(packageDir)}`}`,
     `checks: ${checks.length === 0 ? 'none detected; inspect the repo before claiming verification' : checks.join('; ')}`,
     `policy: ${compactPolicy(options, reasoning, workflow)}`,
   ]

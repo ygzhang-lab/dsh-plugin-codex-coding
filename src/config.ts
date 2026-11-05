@@ -92,13 +92,24 @@ export const CORE_MODULES: readonly string[] = PLUGIN_CATALOG
   .filter((plugin) => plugin.safety === 'core')
   .map((plugin) => plugin.module)
 
+const CORE_MODULE_SET = new Set(CORE_MODULES)
+
+/** A core plugin is required by the Coding workflow and cannot be disabled. */
+export function isCoreModule(module: string): boolean {
+  return CORE_MODULE_SET.has(module)
+}
+
 export const DEFAULT_OPTIONS: CodingOptions = {
   reasoning: 'auto',
   localSkills: true,
   disabledPlugins: [],
 }
 
-/** Normalize a partially decoded or user-authored value into a safe policy. */
+/**
+ * Normalize a partially decoded or user-authored value into a safe policy.
+ * Core plugins are always dropped from the disable list: neither the settings
+ * page nor a hand-edited profile may switch off the workflow's required tools.
+ */
 export function normalizeOptions(value: Partial<CodingOptions> | undefined): CodingOptions {
   const reasoning = value?.reasoning
   const disabled = value?.disabledPlugins
@@ -106,7 +117,9 @@ export function normalizeOptions(value: Partial<CodingOptions> | undefined): Cod
     reasoning: reasoning === 'low' || reasoning === 'high' || reasoning === 'max' ? reasoning : 'auto',
     localSkills: value?.localSkills !== false,
     disabledPlugins: Array.isArray(disabled)
-      ? [...new Set(disabled.filter((item): item is string => typeof item === 'string'))]
+      ? [...new Set(disabled.filter((item): item is string => (
+        typeof item === 'string' && !CORE_MODULE_SET.has(item)
+      )))]
       : [],
   }
 }
@@ -117,7 +130,8 @@ export function disabledToolNames(options: CodingOptions): string[] {
   if (options.localSkills === false) names.add('skill')
   const disabled = Array.isArray(options.disabledPlugins) ? options.disabledPlugins : []
   for (const module of disabled) {
-    if (typeof module !== 'string') continue
+    // Core tools stay callable even when an unnormalized value reaches here.
+    if (typeof module !== 'string' || CORE_MODULE_SET.has(module)) continue
     for (const tool of PLUGIN_CATALOG.find((plugin) => plugin.module === module)?.tools ?? []) {
       names.add(tool)
     }
