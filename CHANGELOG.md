@@ -1,6 +1,38 @@
 # 更新日志
 
-本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则见 README 的[版本策略](README.md#版本策略)：`0.2.<内部流水号>[-rc.N]`，前两位对齐 DSH 的 `0.2.x`。
+本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则与 DSH 的对应关系见 README 的[版本策略](README.md#版本策略)。
+
+## [0.2.2-rc.1] - 2026-11-06
+
+### 新增
+
+- **卡片推理行的「自动」链接**：推理来源显示为 `会话覆盖`（在输入框里手选过等级，或 `coding_reasoning` 设过）且卡片可交互时，行尾出现 `自动` 链接文本。点击后客户端通过 `modelDirectories` 服务对当前 provider/model 重新选择一次、但不带 `reasoningEffort`，Host 追加一条不含 effort 的 `model/selection`；`codingReasoning` 投影据此把 `userEffort` 与工具覆盖一起清空，下一轮重新交给分类器定档；不带 effort 的选择即使在轮次运行中也按“交还自动”折叠，其余选择保持原规则。该投影 `stateVersion` 递增（5 → 6），旧检查点按日志重新折叠。设置页固定的等级和历史卡片不显示该链接。
+
+### 修复
+
+- **自动推理等级把整轮打成失败（DSH 0.2.2）**：0.2.2 在 `agent/pre-step` 之前就定格本步的 selection，并禁止 `agent/request` 再改 `provider` / `model` / `reasoningEffort`，否则抛出 `agent/request proposed reasoning effort "high" after step preparation fixed "low"; use agent.model.select() before step preparation`。插件的旧写入路径 `sessionController.selectionFor()` 在该版本已被移除，`setEffort()` 实际上什么也没做，于是分类结果总在请求阶段才出现，与已定格的默认 `low` 冲突，整轮中止。
+  - 删除 `agent/request` 监听；等级改为 `agent.model.select()` 写入会话的模型选择。
+  - 在 `agent/inbox/claimed`（Host 定格 selection 之前同步派发）用预缓存的能力表同步定档，本轮第一步即生效；能力表未就绪时退回 `agent/pre-step`，从下一步生效，不再抛错。
+  - `codingReasoning` 投影新增 `running`：只有空闲时出现的 `model/selection` 才算用户手选，插件自己的自动写入不会被回读成"用户选档"而把 `auto` 永久钉死。
+  - 该投影 `stateVersion` 递增（3 → 5），旧检查点按日志重新折叠。
+- **历史模式卡片仍会跟着当前状态变（rc.3 修复的遗漏边界）**：
+  - **根因**：`conversation.chat.turnTail` 交给卡片的 `turn` 是槽位契约里的 `TurnLocation`（`{ kind, turn }`），不是数字。插件原来按数字读，`turn` 永远取不到值，于是每张卡都被当成"没有轮次"：`record` 找不到快照 → 推理等级行整行消失；按钮全部禁用。rc.3 之前则因为回退到实时模式，变成所有卡片跟着当前状态变。现在改为读 `turn.turn`（同时兼容直接传数字）。
+  - 客户端只在 `turn === latest` 时把卡片当控件；缺少 `turn` 或 `latest` 的投影值一律按历史卡只读，不再回退到实时模式。
+  - `latest` 改为只随 `turn/end` 前进：宿主的回合尾部卡片在 `turn/end` 才发布，若按 `turn/start` 前进，新一轮运行期间屏幕上最后一张卡片会被判成历史卡，整个对话没有任何可点的切换控件。
+  - 在轮次中被强杀（只有 `turn/start`、没有 `turn/end`）的轮次不发布卡片，也不再补写快照。
+  - 卡片冻结时若对应的推理快照还没落地（尾部与投影更新同刻到达），推理等级行回退到当前值，不再整行消失。
+  - `codingWorkflow` 投影 `stateVersion` 递增（3 → 5），旧检查点按日志重新折叠。
+  - 新增回归测试：同一张历史卡在投影多次更新后必须渲染出逐字节相同的 HTML。
+
+### 兼容性
+
+- `engines.dsh` 收窄为 `>=0.2.2-rc.1 <0.3.0`（原 `>=0.2.1-rc.5 <0.3.0`）。这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`，旧 Host 没有该服务，`agent/pre-step` 同样写不进去；而 DSH 只用 `engines.dsh` 判断能否安装，原来的范围会让 0.2.1.x 装上一个"自动等级静默失效"的版本。0.2.1.x 继续用 0.2.1 线。
+- README 的兼容表与版本策略同步：删掉“更早版本走 pre-step 兜底”的说法，改为说明 0.2.1.x 会被 `engines.dsh` 直接拦下；`test/package.test.ts` 的断言随包清单一起更新。
+
+### 文档
+
+- README「推理等级自动切换」补充新的定档时机与 `agent/request` 契约；「与 DSH 输入框的模型/推理选择器」说明"运行中的选择视为插件自动写入"的取舍；「会话内模式卡片」补充 `latest` / `turn` 缺失时一律只读、缺 `turn/end` 的补写规则；「已知限制」把 `sessionController` 改为 `agent.model`。
+- README 在插件介绍之后新增「快速使用方法」；「安装」新增 DSH 0.2.1.x / 0.2.2.x 与插件版本线的对应说明（`sessionController.selectionFor` 已弃用，两条线不通用）。
 
 ## [0.2.1-rc.3] - 2026-11-05
 
