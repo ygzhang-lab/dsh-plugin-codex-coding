@@ -44,6 +44,14 @@ export interface ReasoningProjectionState {
   latest: number
   /** Reasoning state as of each completed turn, oldest first. */
   turns: ReasoningTurn[]
+  /**
+   * True while a turn is open. The preset writes its automatic level through
+   * `model/selection`, the same event the chat box uses; an effort-bearing
+   * selection folded while a turn is running is that automatic write, not a
+   * user pick. A selection without an effort is always an explicit hand-back
+   * to automatic — the preset never writes one — so it folds even mid-turn.
+   */
+  running: boolean
 }
 
 const levelSchema = z.enum(['low', 'high', 'max'])
@@ -60,6 +68,7 @@ const stateSchema = z.object({
   active: z.boolean(),
   latest: z.number(),
   turns: z.array(turnSchema),
+  running: z.boolean(),
 }).strict()
 
 /** Bound the history the state carries; older cards fall back to the live row. */
@@ -114,9 +123,9 @@ function effortFromSelection(event: unknown): string | null | undefined {
 
 export const reasoningProjection = {
   key: REASONING_PROJECTION_KEY,
-  // `turns` and `latest` joined the state, so cached checkpoints from the
-  // previous shape must be discarded.
-  stateVersion: 3,
+  // `latest` changed meaning (newest closed turn, not newest started turn), so
+  // cached checkpoints from an earlier fold must be discarded and rebuilt.
+  stateVersion: 6,
   stateSchema,
   init: (header?: PresetHeader): ReasoningProjectionState => ({
     override: null,
@@ -125,6 +134,7 @@ export const reasoningProjection = {
     active: isActiveSession(header),
     latest: 0,
     turns: [],
+    running: false,
   }),
   apply: (state: ReasoningProjectionState, event: unknown): ReasoningProjectionState => {
     const value = event as {
@@ -142,6 +152,12 @@ export const reasoningProjection = {
     }
     const picked = effortFromSelection(event)
     if (picked !== undefined) {
+      // `agent.model.select()` writes `model/selection` too. Folding this
+      // preset's own automatic level as a chat-box pick would pin `auto`
+      // forever, so an effort-bearing selection only counts while no turn is
+      // open. An effort-less one is the explicit "back to automatic" the card
+      // writes: the preset never produces it, so it stays meaningful mid-turn.
+      if (state.running && picked !== null) return state
       return picked === state.userEffort && state.override === null
         ? state
         : { ...state, userEffort: picked, override: null }
@@ -151,16 +167,18 @@ export const reasoningProjection = {
       return effort === state.effort ? state : { ...state, effort }
     }
     // Snapshot the reasoning state when a turn closes: its card must keep the
-    // level that turn actually used, while later turns move on.
+    // level that turn actually used, while later turns move on. `latest`
+    // advances on `turn/end` only — the chat tail is published then, so a turn
+    // that merely started has no card to freeze yet.
     const turn = eventTurn(event)
     if (turn !== undefined && (value.type === 'turn/start' || value.type === 'turn/end')) {
-      const latest = Math.max(state.latest, turn)
       if (value.type === 'turn/start') {
-        return latest === state.latest ? state : { ...state, latest }
+        return state.running ? state : { ...state, running: true }
       }
+      const latest = Math.max(state.latest, turn)
       const turns = state.turns.filter((item) => item.turn !== turn)
       turns.push({ turn, override: state.override, userEffort: state.userEffort, effort: state.effort })
-      return { ...state, latest, turns: turns.slice(-MAX_TURNS) }
+      return { ...state, latest, turns: turns.slice(-MAX_TURNS), running: false }
     }
     const active = activationFromEvent(event)
     if (active === undefined || active === state.active) return state

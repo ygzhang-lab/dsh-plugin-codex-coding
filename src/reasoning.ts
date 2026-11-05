@@ -88,6 +88,13 @@ export class ReasoningController {
   private readonly userChoices = new WeakMap<object, string>()
   private readonly applied = new WeakMap<object, string>()
   private readonly support = new Map<string, Promise<readonly string[] | null>>()
+  /**
+   * Resolved effort ids per route, readable synchronously. The inbox hook has
+   * to choose an effort before the Host snapshots the step's selection and
+   * cannot await `resolveModelInfo`, so the asynchronous lookup fills this map
+   * ahead of time and a cold entry simply defers to the pre-step path.
+   */
+  private readonly resolved = new Map<string, readonly string[] | null>()
 
   constructor(
     private readonly ctx: any,
@@ -150,16 +157,33 @@ export class ReasoningController {
       : undefined
     if (userEffort === undefined) this.userChoices.delete(agent)
     else this.userChoices.set(agent, userEffort)
+    // The route may have moved since the last lookup; warm the synchronous
+    // cache so the next inbox hook can choose an effort itself.
+    void this.prewarm(agent).catch(() => {})
   }
 
-  private selectionFor(agent: any): any {
-    const controller = this.service(agent, 'sessionController')
-    if (controller?.selectionFor === undefined) return undefined
+  /**
+   * The step's model selection. 0.2.2 owns it on `agent.model`; the removed
+   * `sessionController.selectionFor` object is gone, so every read and write
+   * goes through that service.
+   */
+  private selection(agent: any): any {
+    const model = agent?.model
+    if (typeof model?.current !== 'function') return undefined
     try {
-      return controller.selectionFor(agent)
+      return model.current()
     } catch {
       return undefined
     }
+  }
+
+  /** Resolve a route's supported efforts in the background; failures stay unknown. */
+  async prewarm(agent: any): Promise<void> {
+    const current = this.selection(agent)
+    if (current === undefined) return
+    const key = `${current.provider}/${current.model}`
+    if (this.support.has(key)) return
+    await this.effortsFor(agent, current.provider, current.model, undefined)
   }
 
   private async effortsFor(
@@ -177,14 +201,20 @@ export class ReasoningController {
       try {
         const info = await llm.resolveModelInfo(provider, model, signal)
         const efforts = Array.isArray(info?.reasoning?.efforts) ? info.reasoning.efforts : []
-        return efforts
+        const ids = efforts
           .map((effort: { id?: unknown }) => effort?.id)
           .filter((id: unknown): id is string => typeof id === 'string')
+        this.resolved.set(key, ids)
+        return ids
       } catch {
         // A transient capability lookup must not pin this route to "no
         // reasoning" for the rest of the process. Retry after a short pause.
+        this.resolved.set(key, null)
         if (signal?.aborted === true) this.support.delete(key)
-        else setTimeout(() => this.support.delete(key), 30_000).unref?.()
+        else setTimeout(() => {
+          this.support.delete(key)
+          this.resolved.delete(key)
+        }, 30_000).unref?.()
         return null
       }
     })()
@@ -193,28 +223,9 @@ export class ReasoningController {
   }
 
   private async supported(agent: any, signal?: AbortSignal): Promise<readonly string[] | null> {
-    const current = this.selectionFor(agent)?.current
+    const current = this.selection(agent)
     if (current === undefined) return null
     return this.effortsFor(agent, current.provider, current.model, signal)
-  }
-
-  /**
-   * Resolve the model's supported efforts from the actual request route and
-   * return the effort to send. This path does not require the session
-   * controller's selection object, so a missing selection cannot suppress the
-   * automatic level.
-   */
-  async requestEffort(agent: any, config: any, signal?: AbortSignal): Promise<string | undefined> {
-    const choice = this.states.get(agent)?.choice
-    if (choice === undefined) return undefined
-    const provider = config?.provider
-    const model = config?.model
-    if (typeof provider !== 'string' || typeof model !== 'string') return undefined
-    const efforts = await this.effortsFor(agent, provider, model, signal)
-    if (efforts === null) return undefined
-    const effort = this.resolveEffort(choice, efforts)
-    if (effort !== undefined) this.applied.set(agent, effort)
-    return effort
   }
 
   /**
@@ -227,22 +238,37 @@ export class ReasoningController {
     return mapEffort(choice.level, supported)
   }
 
-  private setEffort(agent: any, effort: string | undefined): void {
-    const selection = this.selectionFor(agent)
-    const current = selection?.current
-    if (current === undefined) return
-    const next: any = { ...current }
-    if (effort === undefined) delete next.reasoningEffort
-    else next.reasoningEffort = ReasoningEffortId(effort)
-    selection.current = next
-    // Prompt assembly may have snapshotted `current` before this listener ran.
-    // Keep the snapshot that `agent/request` reads in sync for this step.
-    if (selection.assembled !== undefined) {
-      const assembled: any = { ...selection.assembled }
-      if (effort === undefined) delete assembled.reasoningEffort
-      else assembled.reasoningEffort = ReasoningEffortId(effort)
-      selection.assembled = assembled
+  /**
+   * Record the effort as the session's model selection. The Host fixes a
+   * step's selection before prompt assembly and refuses an `agent/request`
+   * rewrite, so `agent.model.select()` is the only supported write; it applies
+   * from the next step, which is why the inbox hook runs it before `preStep`
+   * captures the selection for the incoming turn.
+   */
+  private selectEffort(agent: any, effort: string | undefined): boolean {
+    const model = agent?.model
+    if (typeof model?.select !== 'function') return false
+    const current = this.selection(agent)
+    if (current === undefined) return false
+    if (effort === undefined) {
+      this.applied.delete(agent)
+      return true
     }
+    if (String(current.reasoningEffort ?? '') === effort) {
+      this.applied.set(agent, effort)
+      return true
+    }
+    try {
+      model.select({
+        provider: current.provider,
+        model: current.model,
+        reasoningEffort: ReasoningEffortId(effort),
+      })
+    } catch {
+      return false
+    }
+    this.applied.set(agent, effort)
+    return true
   }
 
   /** Treat a malformed runtime value as the safe automatic mode. */
@@ -250,20 +276,13 @@ export class ReasoningController {
     return value === 'low' || value === 'high' || value === 'max' ? value : 'auto'
   }
 
-  /**
-   * Recompute the decision for the current step. When the caller supplies the
-   * admitted message batch, classify the request itself; otherwise fall back
-   * to the session's latest direct user message.
-   */
-  async apply(agent: any, signal?: AbortSignal, messages?: unknown): Promise<ReasoningChoice | undefined> {
-    if (agent?.session === undefined) return undefined
+  /** Classify one request; the caller decides when to write the selection. */
+  private classify(agent: any, text: string): ReasoningChoice {
     const options = this.options()
     const mode = this.mode(options.reasoning)
     const sessionCtx = this.serviceContext(agent)
     const turn = turnOf(sessionCtx, agent.session)
     const plan = todosOf(sessionCtx, agent.session)
-    const admitted = messages === undefined ? '' : latestUserTextIn(messages)
-    const text = admitted.trim() !== '' ? admitted : latestUserText(agent.session)
     const classified = mode === 'auto'
       ? classifyTask(text, plan)
       : {
@@ -277,8 +296,21 @@ export class ReasoningController {
     if (mode === 'auto') {
       const previous = this.states.get(agent)
       if (previous !== undefined && previous.turn === turn) level = higher(previous.level, level)
-      const userEffort = this.userChoices.get(agent)
-      const override = this.overrides.get(agent)
+      // The durable projection is the authority: a chat-box pick may have
+      // landed since the last pre-step, and the inbox hook reads this before
+      // `syncProjection` runs for the incoming turn. The in-memory maps only
+      // cover hosts whose projection has not folded the event yet.
+      const projected = this.projectionState(agent)
+      const userEffort = projected === undefined
+        ? this.userChoices.get(agent)
+        : (typeof projected.userEffort === 'string' && projected.userEffort.trim() !== ''
+            ? projected.userEffort.trim()
+            : undefined)
+      const override = projected === undefined
+        ? this.overrides.get(agent)
+        : (projected.override === 'low' || projected.override === 'high' || projected.override === 'max'
+            ? projected.override
+            : undefined)
       if (userEffort !== undefined) {
         // A pick in the chat box is the user's explicit decision for this
         // session: skip the classifier instead of overwriting it each step.
@@ -296,15 +328,49 @@ export class ReasoningController {
       level,
       ...(effort === undefined ? {} : { effort }),
     }
-    const supported = await this.supported(agent, signal)
-    if (supported !== null) this.setEffort(agent, this.resolveEffort(choice, supported))
     this.states.set(agent, { turn, level, choice })
+    return choice
+  }
+
+  /**
+   * Choose for a message claimed by the inbox. The Host emits this hook before
+   * it snapshots the step's model selection, so a synchronous capability cache
+   * lets the automatic level reach the turn's first step instead of the next
+   * one. A cold cache writes nothing and leaves the pre-step path to catch up.
+   */
+  applySync(agent: any, message: unknown): ReasoningChoice | undefined {
+    if (agent?.session === undefined) return undefined
+    const text = directUserText(message)
+    if (text.trim() === '') return undefined
+    const choice = this.classify(agent, text)
+    const current = this.selection(agent)
+    if (current !== undefined) {
+      const supported = this.resolved.get(`${current.provider}/${current.model}`)
+      if (supported !== undefined && supported !== null) {
+        this.selectEffort(agent, this.resolveEffort(choice, supported))
+      }
+    }
+    return choice
+  }
+
+  /**
+   * Recompute the decision for the current step. When the caller supplies the
+   * admitted message batch, classify the request itself; otherwise fall back
+   * to the session's latest direct user message.
+   */
+  async apply(agent: any, signal?: AbortSignal, messages?: unknown): Promise<ReasoningChoice | undefined> {
+    if (agent?.session === undefined) return undefined
+    const admitted = messages === undefined ? '' : latestUserTextIn(messages)
+    const text = admitted.trim() !== '' ? admitted : latestUserText(agent.session)
+    const choice = this.classify(agent, text)
+    const supported = await this.supported(agent, signal)
+    if (supported !== null) this.selectEffort(agent, this.resolveEffort(choice, supported))
     return choice
   }
 
   /** Current selector value without resolving provider capabilities. */
   currentEffort(agent: any): string | undefined {
-    const value = this.selectionFor(agent)?.current?.reasoningEffort
+    const value = this.selection(agent)?.reasoningEffort
     return value === undefined ? undefined : String(value)
   }
 
@@ -377,11 +443,11 @@ export class ReasoningController {
     return { source: 'auto', level: choice.level, reason: choice.reason }
   }
 
-  /** Explain why an automatic decision could not reach the request selector. */
+  /** Explain why an automatic decision could not reach the model selection. */
   async diagnose(agent: any): Promise<string> {
     const lines: string[] = []
     for (const [label, scoped] of [['agent', agent?.ctx], ['preset', this.ctx]] as const) {
-      for (const name of ['sessionController', 'llm', 'sessionProjections']) {
+      for (const name of ['llm', 'sessionProjections']) {
         let state: string
         try {
           state = scoped?.get?.(name) === undefined ? 'missing' : 'present'
@@ -391,16 +457,10 @@ export class ReasoningController {
         lines.push(`${label}.${name}: ${state}`)
       }
     }
-    const controller = this.service(agent, 'sessionController')
-    lines.push(`selectionFor: ${typeof controller?.selectionFor}`)
-    let current: any
-    try {
-      const selection = controller?.selectionFor?.(agent)
-      current = selection?.current
-      lines.push(`selection: ${selection === undefined ? 'missing' : `current=${JSON.stringify(current)}`}`)
-    } catch (error) {
-      lines.push(`selectionFor error: ${String(error)}`)
-    }
+    lines.push(`agent.model: ${agent?.model === undefined ? 'missing' : 'present'}`)
+    const current = this.selection(agent)
+    lines.push(`model.select: ${typeof agent?.model?.select}`)
+    lines.push(`selection: ${current === undefined ? 'missing' : JSON.stringify(current)}`)
     const header = agent?.session?.requestHeader?.()
     const provider = current?.provider ?? header?.config?.provider
     const model = current?.model ?? header?.config?.model

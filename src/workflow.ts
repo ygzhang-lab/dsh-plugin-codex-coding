@@ -107,9 +107,9 @@ export function activationFromEvent(event: unknown): boolean | undefined {
  */
 export const workflowProjection = {
   key: WORKFLOW_PROJECTION_KEY,
-  // `turns` and `latest` joined the state and its fold reads session events,
-  // so cached checkpoints from the previous shape must be discarded.
-  stateVersion: 3,
+  // `latest` changed meaning (newest closed turn, not newest started turn), so
+  // cached checkpoints from an earlier fold must be discarded and rebuilt.
+  stateVersion: 5,
   stateSchema,
   init: (header?: PresetHeader): WorkflowProjectionState => ({
     mode: 'auto',
@@ -134,15 +134,15 @@ export const workflowProjection = {
       return mode === undefined ? state : { ...state, mode }
     }
     // A card belongs to one turn: the turn it closed keeps the mode that was
-    // in force then, and only the newest turn's card may switch it. `latest`
-    // advances on `turn/start` so the previous card locks as soon as the next
-    // turn begins instead of when that turn happens to end.
+    // in force then, and only the newest closed turn's card may switch it.
+    // `latest` advances on `turn/end` only: the chat tail is published on
+    // `turn/end`, so a turn that merely started has no card yet — advancing on
+    // `turn/start` would leave every rendered card frozen while that turn
+    // runs. A turn killed mid-flight never publishes a card either, so it needs
+    // no snapshot here.
     const turn = eventTurn(event)
-    if (turn !== undefined && (value.type === 'turn/start' || value.type === 'turn/end')) {
+    if (turn !== undefined && value.type === 'turn/end') {
       const latest = Math.max(state.latest, turn)
-      if (value.type === 'turn/start') {
-        return latest === state.latest ? state : { ...state, latest }
-      }
       const turns = state.turns.filter((item) => item.turn !== turn)
       turns.push({ turn, mode: state.mode })
       return { ...state, latest, turns: turns.slice(-MAX_TURNS) }

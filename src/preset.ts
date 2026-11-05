@@ -136,7 +136,7 @@ function registerPatch(ctx: any, service: CodingService): void {
  * completely unaffected.
  */
 export const name = 'dsh-plugin-codex-coding-preset'
-export const inject = ['tools', 'dshCoding', 'systemPrompt', 'sessionController', 'llm', 'sessionProjections', 'commands']
+export const inject = ['tools', 'dshCoding', 'systemPrompt', 'llm', 'sessionProjections', 'commands']
 
 export function apply(ctx: any): void {
   const service = serviceOf(ctx)
@@ -214,11 +214,26 @@ export function apply(ctx: any): void {
   ctx.on('agent/created', ({ agent }: { agent: any }) => {
     remember(agent)
     restrictAgent(agent, service.options)
+    // Warm the effort table so the first claimed message can pick a level
+    // synchronously, before the Host snapshots the step's selection.
+    void reasoning.prewarm(agent).catch(() => {})
+  })
+
+  // The Host emits this synchronously from `inbox.claim()`, before it reads
+  // `model.current()` for step preparation, so it is the only point where an
+  // automatic effort can reach the turn's first step. A cold capability cache
+  // writes nothing; `agent/pre-step` then applies the level from the next step.
+  ctx.on('agent/inbox/claimed', ({ agent, message }: { agent: any; message: unknown }) => {
+    try {
+      reasoning.applySync(agent, message)
+    } catch {
+      // A failed synchronous decision must never block the claim.
+    }
   })
 
   // Prompt assembly happens before the claimed user messages enter history, so
-  // classify at the pre-step boundary where the admitted batch is available.
-  // This also runs after prompt assembly snapshotted the next model selection.
+  // classify at the pre-step boundary as well: this refreshes the level for the
+  // rest of the turn and is the fallback when the inbox hook saw a cold cache.
   ctx.on('agent/pre-step', async (context: any, next: () => Promise<any>) => {
     const decision = await next()
     if (decision?.kind === 'reject' || context.signal?.aborted === true) return decision
@@ -248,20 +263,6 @@ export function apply(ctx: any): void {
       // A failed classifier must never block the step.
     }
     return decision
-  }, { prepend: true })
-
-  // Apply the classified level to the actual request as well. This is the
-  // final gate before the provider call and does not depend on the session
-  // controller's mutable selection object.
-  ctx.on('agent/request', async (context: any, next: () => Promise<any>) => {
-    const config = await next()
-    try {
-      const effort = await reasoning.requestEffort(context.agent, config, context.signal)
-      if (effort === undefined) return config
-      return { ...config, reasoningEffort: effort }
-    } catch {
-      return config
-    }
   }, { prepend: true })
 
   ctx.tools.register(defineTool({
