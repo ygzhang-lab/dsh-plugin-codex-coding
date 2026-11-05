@@ -1,11 +1,12 @@
 import { createElement as h, useSyncExternalStore, useState } from 'react'
 import {
-  CORE_MODULES,
   PLUGIN_CATALOG,
+  isCoreModule,
   normalizeOptions,
   type CodingOptions,
   type ReasoningMode,
 } from '../config.js'
+import { WORKFLOW_MODES, WORKFLOW_PROJECTION_KEY, type WorkflowMode } from '../mode.js'
 
 const NS = 'settings.dshCoding'
 const BUNDLE = 'dsh-plugin-coding'
@@ -32,8 +33,9 @@ const en = {
   skillsOff: 'Block local skills',
   plugins: 'Installed DSH plugins',
   pluginsHint:
-    'Select which agent-facing DSH plugins may expose tools in new sessions of this preset. Unchecked plugins stay installed; only their tools are hidden. Core plugins are marked because the Codex workflow expects them.',
+    'Select which agent-facing DSH plugins may expose tools in new sessions of this preset. Unchecked plugins stay installed; only their tools are hidden. Core plugins are required by the Codex workflow, so they are locked on.',
   core: 'Core',
+  coreLocked: 'Required by the Coding workflow; this plugin always stays enabled.',
   tools: 'Tools',
   applies: 'Applies to new sessions of this preset.',
   saveFailed: 'The setting was not saved. Check Host authorization and try again.',
@@ -41,6 +43,15 @@ const en = {
   unavailable: 'This configuration is not available in the current Host.',
   readOnly: 'This deployment stores settings read-only.',
   saving: 'Saving…',
+  workflowTitle: 'Workflow mode',
+  workflowAutoStatus: 'Automatic — the model picks Consult, Review, or Code from each request.',
+  workflowManualStatus: 'manual, fixed for this session',
+  workflowSwitchHint: 'Wrong mode? Pick one below; it applies to your next messages. Auto clears the override, and you can also type /workflow <mode>.',
+  workflowModeAuto: 'Auto',
+  workflowModeConsult: 'Consult',
+  workflowModeReview: 'Review',
+  workflowModeCode: 'Code',
+  workflowSwitchFailed: 'The mode was not changed. Try again or run /workflow.',
 }
 
 const zh: typeof en = {
@@ -63,8 +74,9 @@ const zh: typeof en = {
   skillsOff: '禁止加载本地 Skill',
   plugins: '已安装 DSH 插件',
   pluginsHint:
-    '选择该预设的新会话中允许提供工具的 DSH 插件。取消勾选不会卸载插件，只隐藏其工具；核心插件是 Codex 工作流所依赖的。',
+    '选择该预设的新会话中允许提供工具的 DSH 插件。取消勾选不会卸载插件，只隐藏其工具；核心插件是 Coding 工作流所依赖的，固定启用、不能取消。',
   core: '核心',
+  coreLocked: 'Coding 工作流必需的核心插件，保持启用，不能取消勾选。',
   tools: '工具',
   applies: '对该预设的新会话生效。',
   saveFailed: '设置未保存。请检查 Host 授权后重试。',
@@ -72,6 +84,15 @@ const zh: typeof en = {
   unavailable: '当前 Host 未提供此配置。',
   readOnly: '当前部署的设置为只读。',
   saving: '保存中…',
+  workflowTitle: '工作流模式',
+  workflowAutoStatus: '自动 — 由模型按本轮请求在 Consult / Review / Code 中选择。',
+  workflowManualStatus: '手动，本会话固定',
+  workflowSwitchHint: '模式不符合预期？点击下方切换，对后续消息生效；选 Auto 清除覆盖，也可以直接输入 /workflow <模式>。',
+  workflowModeAuto: '自动',
+  workflowModeConsult: '咨询',
+  workflowModeReview: '审查',
+  workflowModeCode: '编码',
+  workflowSwitchFailed: '模式未切换成功。请重试，或直接执行 /workflow。',
 }
 
 const styles = {
@@ -139,6 +160,15 @@ const styles = {
     padding: '8px 2px',
     borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
   },
+  pluginLocked: {
+    opacity: 0.72,
+  },
+  lockedHint: {
+    color: 'var(--dsw-alias-label-tertiary)',
+    fontSize: '11px',
+    lineHeight: '16px',
+    fontStyle: 'italic',
+  },
   pluginBody: {
     display: 'flex',
     flexDirection: 'column',
@@ -180,7 +210,119 @@ const styles = {
     fontSize: '12px',
     lineHeight: '18px',
   },
+  workflowCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '8px 10px',
+    border: '0.5px solid var(--dsw-alias-border-l3)',
+    borderRadius: '10px',
+    background: 'var(--dsw-alias-bg-layer-1)',
+  },
+  workflowHead: {
+    display: 'flex',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  workflowTitle: {
+    color: 'var(--dsw-alias-label-primary)',
+    fontSize: '12px',
+    fontWeight: 500,
+    lineHeight: '18px',
+  },
+  workflowStatus: {
+    color: 'var(--dsw-alias-label-secondary)',
+    fontSize: '12px',
+    lineHeight: '18px',
+  },
+  workflowActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '6px',
+  },
+  workflowButton: {
+    border: '0.5px solid var(--dsw-alias-border-l3)',
+    borderRadius: '8px',
+    background: 'transparent',
+    color: 'var(--dsw-alias-label-secondary)',
+    fontSize: '12px',
+    lineHeight: '18px',
+    padding: '2px 8px',
+    cursor: 'pointer',
+  },
+  workflowButtonActive: {
+    borderColor: 'var(--dsw-alias-state-accent-primary, var(--dsw-alias-label-primary))',
+    color: 'var(--dsw-alias-label-primary)',
+    background: 'var(--dsw-alias-bg-module-platform)',
+  },
+  workflowHint: {
+    margin: 0,
+    color: 'var(--dsw-alias-label-tertiary)',
+    fontSize: '11px',
+    lineHeight: '16px',
+  },
 } as const
+
+function modeLabelKey(mode: WorkflowMode): keyof typeof en {
+  if (mode === 'consult') return 'workflowModeConsult'
+  if (mode === 'review') return 'workflowModeReview'
+  if (mode === 'code') return 'workflowModeCode'
+  return 'workflowModeAuto'
+}
+
+/**
+ * Per-turn card in the conversation. It reads the `codingWorkflow` projection
+ * (registered only by the Coding preset, so other presets render nothing) and
+ * switches the mode through the Host `workflow` command.
+ */
+export function WorkflowModeCard(props: any): any {
+  const state = props.useProjection?.(WORKFLOW_PROJECTION_KEY) as { mode?: WorkflowMode } | undefined
+  const [busy, setBusy] = useState<WorkflowMode | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const t = props.t as (key: keyof typeof en) => string
+  const mode = state?.mode
+  if (mode === undefined) return null
+
+  const status = mode === 'auto'
+    ? t('workflowAutoStatus')
+    : `${t(modeLabelKey(mode))} — ${t('workflowManualStatus')}`
+
+  async function choose(next: WorkflowMode): Promise<void> {
+    if (busy !== null) return
+    setBusy(next)
+    setError(null)
+    try {
+      const result = await props.execute?.(`/workflow ${next}`)
+      if (result === undefined || result?.ok === false) setError(t('workflowSwitchFailed'))
+    } catch {
+      setError(t('workflowSwitchFailed'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return h('div', { style: styles.workflowCard },
+    h('div', { style: styles.workflowHead },
+      h('span', { style: styles.workflowTitle }, t('workflowTitle')),
+      h('span', { style: styles.workflowStatus }, status),
+    ),
+    h('div', { style: styles.workflowActions },
+      ...WORKFLOW_MODES.map((option) => h('button', {
+        key: option,
+        type: 'button',
+        disabled: busy !== null,
+        'aria-pressed': mode === option ? 'true' : 'false',
+        style: mode === option
+          ? { ...styles.workflowButton, ...styles.workflowButtonActive }
+          : styles.workflowButton,
+        onClick: () => { void choose(option) },
+      }, busy === option ? t('saving') : t(modeLabelKey(option)))),
+    ),
+    h('p', { style: styles.workflowHint }, t('workflowSwitchHint')),
+    error === null ? null : h('p', { style: styles.error }, error),
+  )
+}
 
 function reasoningOptions(t: (key: keyof typeof en) => string): readonly { value: ReasoningMode; label: string; hint: string }[] {
   return [
@@ -229,6 +371,9 @@ export function CodingSettingsPage(props: any): any {
   }
 
   function togglePlugin(module: string, enabled: boolean): void {
+    // Core plugins are required by the workflow; a stale or crafted value must
+    // not reach the Host through this page.
+    if (isCoreModule(module)) return
     const next = enabled
       ? options.disabledPlugins.filter((item) => item !== module)
       : [...options.disabledPlugins, module]
@@ -283,12 +428,14 @@ export function CodingSettingsPage(props: any): any {
       h('legend', { style: styles.legend }, t('plugins')),
       h('p', { style: styles.hint }, t('pluginsHint')),
       ...PLUGIN_CATALOG.map((plugin) => {
-        const checked = !options.disabledPlugins.includes(plugin.module)
-        return h('label', { key: plugin.module, style: styles.plugin },
+        const core = isCoreModule(plugin.module)
+        const checked = core || !options.disabledPlugins.includes(plugin.module)
+        return h('label', { key: plugin.module, style: core ? { ...styles.plugin, ...styles.pluginLocked } : styles.plugin },
           h('input', {
             type: 'checkbox',
             checked,
-            disabled: !writable || saving,
+            disabled: core || !writable || saving,
+            title: core ? t('coreLocked') : undefined,
             onChange: (event: { target: { checked: boolean } }) => {
               togglePlugin(plugin.module, event.target.checked)
             },
@@ -296,11 +443,10 @@ export function CodingSettingsPage(props: any): any {
           h('span', { style: styles.pluginBody },
             h('span', { style: styles.pluginTitle },
               plugin.label,
-              CORE_MODULES.includes(plugin.module)
-                ? h('span', { style: styles.badge }, t('core'))
-                : null,
+              core ? h('span', { style: styles.badge }, t('core')) : null,
             ),
             h('span', { style: styles.optionHint }, plugin.description),
+            core ? h('span', { style: styles.lockedHint }, t('coreLocked')) : null,
             h('span', { style: styles.module }, plugin.module),
             h('span', { style: styles.module }, `${t('tools')}: ${plugin.tools.join(', ')}`),
           ),
@@ -334,4 +480,21 @@ export function apply(ctx: any): void {
     id: 'dsh-plugin-coding',
     locale: NS,
   }, Page)), 'dsh-plugin-coding: settings page')
+
+  const ModeCard = (props: any) => h(WorkflowModeCard, {
+    ...props,
+    t: props.t ?? translate,
+    execute: (line: string) => {
+      const remote = ctx.remote?.commands
+      if (typeof remote?.execute !== 'function') return undefined
+      return remote.execute(props.sessionId, line, [])
+    },
+  })
+  // Per-turn card in the conversation. The preset registers the projection, so
+  // sessions running another preset render nothing.
+  ctx.effect(() => ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail',
+    id: 'dsh-plugin-coding/workflow-mode',
+    order: 50,
+  }, ModeCard)), 'dsh-plugin-coding: workflow mode card')
 }
