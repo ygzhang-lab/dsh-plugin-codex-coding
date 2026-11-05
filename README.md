@@ -53,9 +53,40 @@ coding_mode(mode="auto")       # 清除手动覆盖
 
 手动模式会一直生效，直到你再次切换；它只改变工作流，不改变推理等级。混合请求先完成明确的只读部分，再询问是否修改代码。
 
+### 会话内模式卡片
+
+Coding 会话每完成一轮，对话流末尾会出现一张 **工作流模式** 卡片（非 Coding 预设的会话不显示）：
+
+- **自动**：由模型按本轮请求在 Consult / Review / Code 中选择；
+- **手动 Review**（或 Consult / Code）：本会话固定，模式说明会作为动态系统提示进入下一次请求；
+- 卡片上有 **自动 / 咨询 / 审查 / 编码** 四个按钮，点击即切换，对后续消息生效；切换结果写入会话日志，刷新或恢复会话后卡片仍显示同一模式。即使模型之后调用了 `coding_mode`，卡片也会同步。
+
+等价的手动方式是在输入框直接执行命令：
+
+```text
+/workflow              # 查看当前模式
+/workflow review       # 本会话固定为 Review
+/workflow auto         # 清除覆盖，回到自动选择
+```
+
+卡片和按钮只用于切换工作流模式；推理等级仍在插件设置页或用 `coding_reasoning` 调整。
+
 ## 安装
 
-要求 DSH `0.2.1-rc.5` 或同一 `0.2.x` 兼容版本。
+### 兼容性与依赖
+
+| 项目 | 声明 | 说明 |
+|---|---|---|
+| DSH | `engines.dsh`: `>=0.2.1-rc.5 <0.3.0` | 在 0.2.1-rc.5 完整验证；0.2.2-rc.1 已验证 Host 启动、配置组合与 Client 模块加载，预设行为仍建议在会话中确认 |
+| Node.js | `engines.node`: `>=24.9.0` | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0 |
+| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例 |
+| 插件自带依赖 | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3` | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片） |
+
+peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeers: false`，因此 `dsh plugin add` 可能打印 `missing peer` 警告，这是预期行为；不要为了消除警告把 `@deepseek-ai/cordis` 装进 profile——宿主与插件各加载一份 cordis 会让 `Service` 实例与依赖注入分裂。`dsh plugin add` 结束时出现该警告不影响安装，安装后 `dsh --profile <profile> --dump-config` 能看到 bundle 的两行即说明组合成功。
+
+### 版本策略
+
+插件版本号只把**前两位**对齐到 DSH 的 `0.2.x`：`0.2.<内部流水号>`（当前 `0.2.1`）。第三位是内部构建序号，与 DSH 的补丁号、rc 号没有对应关系；DSH 的兼容范围以 `engines.dsh` 和上表为准。
 
 ### DSH Desktop
 
@@ -81,11 +112,17 @@ dsh --profile <profile>
 
 ### 从源码本地安装
 
+用于开发调试：先在仓库里构建，再把**本地目录**作为插件挂载。
+
 ```bash
-pnpm install
+pnpm install          # 需要 Node >=24.9.0
 pnpm build
 dsh plugin --profile <profile> add /absolute/path/to/dsh-plugin-coding
 ```
+
+DSH Desktop 也可以在 **Plugins → Add plugin** 里直接填本地绝对路径。本地挂载记录的是目录引用，改完源码后重新 `pnpm build`；profile 的 `patchReload` 为 `live` 时会重新加载，未生效则重启 DSH 再试。
+
+本地挂载只用于开发验证；分发给他人请使用 npm 包名（见上一节）。
 
 ## 唯一运行入口
 
@@ -175,26 +212,26 @@ coding_reasoning(effort="auto")    # 清除会话覆盖
 
 ## DSH 插件工具开关
 
-该预设实际挂载的 DSH 工具插件如下。取消勾选即通过 Agent 作用域的 `ctx.tools.restrict({ deny })` 隐藏对应工具：
+该预设实际挂载的 DSH 工具插件如下。取消勾选即通过 Agent 作用域的 `ctx.tools.restrict({ deny })` 隐藏对应工具；标为 **核心** 的行由 Coding 工作流强制依赖，复选框只读且始终勾选：
 
-| 插件模块 | 工具 |
-|---|---|
-| `@deepseek-ai/dsh-tool-bash` | `bash` |
-| `@deepseek-ai/dsh-tool-pwsh` | `pwsh` |
-| `@deepseek-ai/dsh-tool-fs` | `read`, `write`, `edit`, `apply_patch`, `read_image` |
-| `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` |
-| `@deepseek-ai/dsh-tool-jobs` | `job_output`, `job_list`, `job_kill` |
-| `@deepseek-ai/dsh-tool-todo` | `todo_write` |
-| `@deepseek-ai/dsh-tool-web` | `web_search`, `web_fetch` |
-| `@deepseek-ai/dsh-tool-skill` | `skill` |
+| 插件模块 | 工具 | 核心 |
+|---|---|---|
+| `@deepseek-ai/dsh-tool-bash` | `bash` | ✅ |
+| `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | ✅ |
+| `@deepseek-ai/dsh-tool-fs` | `read`, `write`, `edit`, `apply_patch`, `read_image` | ✅ |
+| `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | |
+| `@deepseek-ai/dsh-tool-jobs` | `job_output`, `job_list`, `job_kill` | |
+| `@deepseek-ai/dsh-tool-todo` | `todo_write` | ✅ |
+| `@deepseek-ai/dsh-tool-web` | `web_search`, `web_fetch` | |
+| `@deepseek-ai/dsh-tool-skill` | `skill` | |
 
 设计边界：
 
 - 开关只作用于 **该预设实际挂载的 Agent 工具插件**，不会动态改变 Cordis 组合，也不会卸载用户安装的第三方插件。
-- 取消勾选 **Filesystem** 会同时隐藏 `apply_patch`，并让该工具在执行时拒绝写入，避免绕过文件工具开关。
+- **核心插件不可关闭**：配置页把核心行显示为灰色只读；即使手改 profile 的 `cordis.patch.yml` 把核心模块写进 `disabledPlugins`，`normalizeOptions` 也会在 Host 侧剔除它们，`disabledToolNames` 也会忽略核心模块——`bash`/`pwsh`/`read`/`edit`/`apply_patch`/`todo_write` 不会因此被隐藏。
 - 第三方插件的工具没有稳定的“插件 → 工具”所有权元数据；为保证不误伤其他工具，当前不把任意第三方 bundle 暴露为开关。
 - 设置对**该预设的新会话**生效；已有会话保留启动时的策略。
-- 隐藏核心工具（如 `bash`、`read`、`todo_write`）会削弱 Codex 工作流，但这是用户明确选择。
+- 取消勾选非核心插件（如 Filesystem 之外的 `Web`、`File search`）只会隐藏其工具，不影响核心工作流。
 
 ## 自定义工具
 
@@ -247,6 +284,8 @@ Codex 兼容的补丁编辑器，用于多文件、多 hunk 或文件移动：
 
 ## 开发
 
+需要 Node `>=24.9.0`（见 `engines.node` 与 `.node-version`；发布 CI 同样使用 24.9.0）。
+
 ```bash
 pnpm install
 pnpm typecheck
@@ -292,7 +331,7 @@ test/                  单元与预设注册测试
 
 ## 已知限制
 
-- DSH 官方 npm 包当前没有随包发布 `.d.ts`，因此 `src/shims.d.ts` 为本插件用到的少量 API 提供了最小类型声明。
+- 类型声明直接来自 DSH npm 包自带的 `lib/types`，插件不再维护本地 shim；DSH 升级导致 API 类型变化时，`pnpm typecheck` 会直接暴露。
 - 自动等级是确定性启发式，不调用额外模型；默认 `Low`，只有明确的多文件、或功能模块审查/重构信号才升 `High`，`Max` 只由项目级或无法修复信号触发。若分类器低估，可在会话内用 `coding_reasoning(effort="max")` 覆盖。
 - 若入口点没有 `sessionController` 或 `llm` 服务（例如某些一次性 runner），推理等级切换会安全跳过；`coding_reasoning` 会显示 `(effort not applied)`。Skill、插件工具限制和自定义工具仍可用。
 - `apply_patch` 需要 Agent 作用域内有 `ctx.fs`；没有文件系统服务时该工具不会注册，原生 `read` / `edit` / `write` 仍可用。
