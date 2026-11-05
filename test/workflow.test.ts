@@ -15,7 +15,7 @@ describe('workflow projection', () => {
     expect(initial).toEqual({ mode: 'auto', active: true, ...noTurns })
     expect(workflowProjection.wire.view(initial)).toEqual({ mode: 'auto', active: true, ...noTurns })
     expect(workflowProjection.stateSchema.parse(initial)).toEqual({ mode: 'auto', active: true, ...noTurns })
-    expect(workflowProjection.stateVersion).toBe(3)
+    expect(workflowProjection.stateVersion).toBe(5)
   })
 
   it('stays inactive for sessions created by another preset', () => {
@@ -146,12 +146,28 @@ describe('per-turn mode history', () => {
     ])
   })
 
-  it('advances `latest` at the start of a turn so the previous card locks', () => {
+  it('keeps `latest` on the newest closed turn while the next one runs', () => {
     const afterTurn = fold([turnStart(1), turnEnd(1)])
     expect(afterTurn.latest).toBe(1)
-    // Turn 2 has begun but has not finished: turn 1 is already history.
-    expect(run(afterTurn, turnStart(2)).latest).toBe(2)
-    expect(run(afterTurn, turnStart(2)).turns).toEqual([{ turn: 1, mode: 'auto' }])
+    // Turn 2 has begun but has not finished, and the chat tail is published on
+    // `turn/end`: turn 1's card is still the newest one on screen and stays the
+    // control instead of leaving the transcript with no switch at all.
+    const duringTurn = run(afterTurn, turnStart(2))
+    expect(duringTurn.latest).toBe(1)
+    expect(duringTurn.turns).toEqual([{ turn: 1, mode: 'auto' }])
+    expect(run(duringTurn, turnEnd(2)).latest).toBe(2)
+  })
+
+  it('ignores a turn that never closed', () => {
+    // A Host killed mid-turn never appended `turn/end`, so that turn published
+    // no card; the newest closed turn must stay the control.
+    const state = fold([
+      turnStart(1),
+      { type: 'command/run', data: { name: 'workflow', args: 'review' } },
+      turnStart(2),
+    ])
+    expect(state.latest).toBe(0)
+    expect(state.turns).toEqual([])
   })
 
   it('rewrites a turn entry instead of duplicating it', () => {

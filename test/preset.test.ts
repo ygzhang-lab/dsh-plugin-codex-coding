@@ -29,7 +29,13 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
   const sections: any[] = [];
   const selection = {
     current: { provider: "p", model: "m" } as any,
-    assembled: undefined as any,
+  };
+  // 0.2.2 exposes the step's selection on the Agent, not on a Host service.
+  const model = {
+    current: () => ({ ...selection.current }),
+    select: (next: any) => {
+      selection.current = { ...next };
+    },
   };
   const ctx = {
     get(name: string) {
@@ -37,8 +43,6 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
       if (name === "workingDirectory") {
         return { ensure: async () => input.workingDirectory ?? process.cwd() };
       }
-      if (name === "sessionController")
-        return { selectionFor: () => selection };
       if (name === "systemPrompt") {
         return {
           section: (section: any) => sections.push(section),
@@ -91,6 +95,7 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
     restrictions,
     warnings,
     selection,
+    model,
     commands,
     contexts,
     projections,
@@ -112,12 +117,12 @@ describe("Codex Coding plugin: preset", () => {
     ]);
     expect(presetInject).toEqual(
       expect.arrayContaining([
-        "sessionController",
         "llm",
         "sessionProjections",
         "commands",
       ]),
     );
+    expect(presetInject).not.toContain("sessionController");
   });
 
   it("registers the conversation card projection, command, and prompt context", () => {
@@ -265,12 +270,12 @@ describe("Codex Coding plugin: preset", () => {
   });
 
   it("classifies the admitted step messages before the request is built", async () => {
-    const { listeners, selection } = harness({
+    const { listeners, selection, model } = harness({
       reasoning: "auto",
       localSkills: true,
       disabledPlugins: [],
     });
-    const agent = { session: { deriveMessages: () => [] } };
+    const agent = { session: { deriveMessages: () => [] }, model };
     const decision = {
       kind: "enter",
       messages: [user("这个项目支持语言包吗？介绍说明")],
@@ -313,12 +318,12 @@ describe("Codex Coding plugin: preset", () => {
   });
 
   it("reports the applied effort after a step is classified", async () => {
-    const { listeners, tools } = harness({
+    const { listeners, tools, model } = harness({
       reasoning: "auto",
       localSkills: true,
       disabledPlugins: [],
     });
-    const agent = { session: { deriveMessages: () => [] } };
+    const agent = { session: { deriveMessages: () => [] }, model };
     const decision = {
       kind: "enter",
       messages: [user("这个项目支持语言包吗？介绍说明")],
@@ -333,13 +338,13 @@ describe("Codex Coding plugin: preset", () => {
     expect(text).toContain("effective: low (low)");
   });
 
-  it("applies the classified level to the request config", async () => {
-    const { listeners } = harness({
+  it("writes the classified level through the model selection, not the request", async () => {
+    const { listeners, selection, model } = harness({
       reasoning: "auto",
       localSkills: true,
       disabledPlugins: [],
     });
-    const agent = { session: { deriveMessages: () => [] } };
+    const agent = { session: { deriveMessages: () => [] }, model };
     const decision = {
       kind: "enter",
       messages: [user("这个项目支持语言包吗？介绍说明")],
@@ -347,20 +352,18 @@ describe("Codex Coding plugin: preset", () => {
     await (listeners.get("agent/pre-step") as Function)({ agent }, () =>
       Promise.resolve(decision),
     );
-    const config = { provider: "p", model: "m", reasoningEffort: "high" };
-    const result = await (listeners.get("agent/request") as Function)(
-      { agent },
-      () => Promise.resolve(config),
-    );
-    expect(result.reasoningEffort).toBe("low");
+    // 0.2.2 rejects any `agent/request` effort rewrite, so the preset must not
+    // register that listener at all and must record the level on the Agent.
+    expect(listeners.has("agent/request")).toBe(false);
+    expect(selection.current.reasoningEffort).toBe("low");
   });
 
   it("explains why an effort could not be applied", async () => {
-    const { listeners, tools } = harness(
+    const { listeners, tools, model } = harness(
       { reasoning: "auto", localSkills: true, disabledPlugins: [] },
       { efforts: [] },
     );
-    const agent = { session: { deriveMessages: () => [] } };
+    const agent = { session: { deriveMessages: () => [] }, model };
     const decision = {
       kind: "enter",
       messages: [user("Fix the failing test")],
@@ -375,6 +378,22 @@ describe("Codex Coding plugin: preset", () => {
     expect(text).toContain("effective: low (effort not applied)");
     expect(text).toContain("diagnosis:");
     expect(text).toContain("efforts: []");
+  });
+
+  it("selects the automatic level for a claimed message before step preparation", async () => {
+    const { listeners, selection, model } = harness({
+      reasoning: "auto",
+      localSkills: true,
+      disabledPlugins: [],
+    });
+    const agent = { session: { deriveMessages: () => [] }, model };
+    // `agent/created` warms the capability cache the way the Host does.
+    (listeners.get("agent/created") as Function)({ agent });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const claimed = listeners.get("agent/inbox/claimed") as Function;
+    expect(claimed).toBeDefined();
+    claimed({ agent, message: user("Fix the failing test") });
+    expect(selection.current.reasoningEffort).toBe("low");
   });
 
   it("executes coding_context against the session working directory", async () => {

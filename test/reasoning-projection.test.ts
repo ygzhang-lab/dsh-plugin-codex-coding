@@ -10,7 +10,7 @@ import { CODING_PRESET_ID } from '../src/workflow.js'
 const initial: ReasoningProjectionState = reasoningProjection.init({
   agentPreset: CODING_PRESET_ID,
 })
-const noTurns = { latest: 0, turns: [] }
+const noTurns = { latest: 0, turns: [], running: false }
 
 function run(
   state: ReasoningProjectionState,
@@ -49,7 +49,7 @@ describe('reasoning projection', () => {
     })
     expect(reasoningProjection.wire.view(initial)).toEqual(initial)
     expect(reasoningProjection.stateSchema.parse(initial)).toEqual(initial)
-    expect(reasoningProjection.stateVersion).toBe(3)
+    expect(reasoningProjection.stateVersion).toBe(6)
   })
 
   it('stays inactive for another preset and for delegated sessions', () => {
@@ -71,6 +71,34 @@ describe('reasoning projection', () => {
     const state = run(initial, chatBox('medium'))
     expect(state.userEffort).toBe('medium')
     expect(state.override).toBeNull()
+  })
+
+  it('ignores a selection written while a turn is running', () => {
+    // The preset writes its automatic level through `agent.model.select()`;
+    // folding that back as a chat-box pick would pin `auto` for the session.
+    const running = run(initial, { type: 'turn/start', data: { turn: 1 } })
+    expect(running.running).toBe(true)
+    const state = run(running, chatBox('high'))
+    expect(state.userEffort).toBeNull()
+    expect(state).toBe(running)
+    // A pick made while the session is idle still wins.
+    const idle = run(state, { type: 'turn/end', data: { turn: 1 } })
+    expect(idle.running).toBe(false)
+    expect(run(idle, chatBox('high')).userEffort).toBe('high')
+  })
+
+  it('folds an effort-less selection as a clear even mid-turn', () => {
+    // The card hands the level back to automatic by re-selecting the route
+    // without an effort. The preset never writes such a selection, so it is
+    // the user's explicit clear rather than the automatic level.
+    const overridden = run(
+      run(initial, { type: 'turn/start', data: { turn: 1 } }),
+      toolCall('{"effort":"max"}'),
+    )
+    const cleared = run(overridden, chatBox())
+    expect(cleared.userEffort).toBeNull()
+    expect(cleared.override).toBeNull()
+    expect(cleared.running).toBe(true)
   })
 
   it('lets a later chat-box pick replace a tool override', () => {
@@ -187,10 +215,13 @@ describe('per-turn reasoning history', () => {
     ])
   })
 
-  it('advances `latest` at the start of a turn and bounds the history', () => {
+  it('advances `latest` only when a turn closes and bounds the history', () => {
     const afterStart = run(initial, { type: 'turn/start', data: { turn: 7 } })
-    expect(afterStart.latest).toBe(7)
+    // The tail card is published on `turn/end`; a started turn has none yet.
+    expect(afterStart.latest).toBe(0)
+    expect(afterStart.running).toBe(true)
     expect(afterStart.turns).toEqual([])
+    expect(run(afterStart, { type: 'turn/end', data: { turn: 7 } }).latest).toBe(7)
 
     const events = []
     for (let turn = 1; turn <= 120; turn += 1) {
@@ -199,5 +230,18 @@ describe('per-turn reasoning history', () => {
     const state = fold(events)
     expect(state.turns).toHaveLength(100)
     expect(state.turns.at(-1)?.turn).toBe(120)
+  })
+
+  it('snapshots nothing for a turn that never closed', () => {
+    const state = fold([
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'request/header', data: { header: { config: { reasoningEffort: 'high' } } } },
+      { type: 'turn/start', data: { turn: 2 } },
+    ])
+    // A Host killed mid-turn publishes no tail card, so there is nothing to
+    // freeze and the newest closed turn stays the control.
+    expect(state.latest).toBe(0)
+    expect(state.turns).toEqual([])
+    expect(state.running).toBe(true)
   })
 })

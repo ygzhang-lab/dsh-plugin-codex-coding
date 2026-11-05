@@ -48,7 +48,7 @@ describe('published bundle', () => {
     // schemastery (Config schema) and zod (session projection) are the only
     // packages the plugin installs for itself.
     expect(Object.keys(manifest.dependencies)).toEqual(['@deepseek-ai/schemastery', 'zod'])
-    expect(manifest.engines.dsh).toBe('>=0.2.1-rc.5 <0.3.0')
+    expect(manifest.engines.dsh).toBe('>=0.2.2-rc.1 <0.3.0')
     expect(manifest.engines.node).toBe('>=24.9.0')
 
     const declared = new Set([

@@ -165,11 +165,12 @@ describe("Coding settings page", () => {
     expect(count(html, 'disabled=""')).toBe(16);
   });
 
-  function harness() {
+  function harness(extra: Record<string, unknown> = {}) {
     const registrations: any[] = [];
     let dictionaries: any;
     const execute = vi.fn(async () => ({ ok: true, value: undefined }));
     const ctx = {
+      ...extra,
       locale: {
         bind: () => t,
         register: (_name: string, value: any) => {
@@ -240,6 +241,43 @@ describe("Coding settings page", () => {
     expect(execute).toHaveBeenCalledWith("session-1", "/workflow review", []);
   });
 
+  it("clears the chat-box effort through the model-selection service", async () => {
+    const select = vi.fn(async () => ({ ok: true, value: undefined }));
+    const directoryFor = vi.fn(() => ({
+      store: {
+        getSnapshot: () => ({
+          current: {
+            provider: "deepseek",
+            model: "deepseek-v4",
+            reasoningEffort: "high",
+          },
+        }),
+      },
+      select,
+    }));
+    const { ctx, registrations } = harness({
+      get: (name: string) =>
+        name === "modelDirectories" ? { directoryFor } : undefined,
+    });
+    apply(ctx);
+    const card = registrations.find(
+      (entry) => entry.name === "conversation.chat.turnTail",
+    );
+    const element = card.component({
+      t,
+      sessionId: "session-1",
+      useProjection: () => ({ mode: "auto" }),
+    });
+    await expect(element.props.resetReasoning()).resolves.toBe(true);
+    expect(directoryFor).toHaveBeenCalledWith("session-1");
+    // The effort is deliberately dropped: the Host then records a selection
+    // without one, which the Coding projection folds back to "automatic".
+    expect(select).toHaveBeenCalledWith({
+      provider: "deepseek",
+      model: "deepseek-v4",
+    });
+  });
+
   it("renders the workflow command as one confirmation line", () => {
     const { ctx, registrations } = harness();
     apply(ctx);
@@ -296,8 +334,9 @@ describe("workflow mode card", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowModeCard, {
         t,
+        turn: 1,
         execute: async () => ({ ok: true }),
-        useProjection: () => ({ mode: "review", active: true }),
+        useProjection: () => ({ mode: "review", active: true, latest: 1 }),
       }),
     );
     expect(html).toContain("workflowTitle");
@@ -311,8 +350,9 @@ describe("workflow mode card", () => {
     const html = renderToStaticMarkup(
       createElement(WorkflowModeCard, {
         t,
+        turn: 1,
         execute: async () => ({ ok: true }),
-        useProjection: () => ({ mode: "auto", active: true }),
+        useProjection: () => ({ mode: "auto", active: true, latest: 1 }),
       }),
     );
     expect(html).toContain("workflowAutoStatus");
@@ -361,9 +401,13 @@ describe("workflow mode card", () => {
     return renderToStaticMarkup(
       createElement(WorkflowModeCard, {
         t,
+        turn: 1,
         execute: async () => ({ ok: true }),
         settings,
-        useProjection: (key: string) => reasonings[key],
+        useProjection: (key: string) =>
+          key === "codingWorkflow"
+            ? { latest: 1, ...(reasonings[key] as Record<string, unknown> | undefined) }
+            : reasonings[key],
       }),
     );
   }
@@ -430,6 +474,90 @@ describe("workflow mode card", () => {
     });
     expect(html).toContain("Medium");
     expect(html).toContain("reasoningSourceOverride");
+  });
+
+  it("offers an Auto link while the session override is live", () => {
+    const html = renderCard({
+      codingWorkflow: { mode: "auto", active: true },
+      codingReasoning: {
+        override: null,
+        userEffort: "medium",
+        effort: "medium",
+        active: true,
+      },
+    });
+    expect(html).toContain("reasoningAutoButton");
+    expect(html).toContain("dsh-coding-card-link");
+  });
+
+  it("offers the Auto link for a tool override as well", () => {
+    const html = renderCard(
+      {
+        codingWorkflow: { mode: "auto", active: true },
+        codingReasoning: { override: "max", effort: "max", active: true },
+      },
+      () => "auto",
+    );
+    expect(html).toContain("reasoningAutoButton");
+  });
+
+  it("hides the Auto link when the level is already automatic", () => {
+    const html = renderCard({
+      codingWorkflow: { mode: "auto", active: true },
+      codingReasoning: { override: null, effort: "low", active: true },
+    });
+    expect(html).not.toContain("reasoningAutoButton");
+  });
+
+  it("hides the Auto link when the settings pin the level", () => {
+    const html = renderCard(
+      {
+        codingWorkflow: { mode: "auto", active: true },
+        codingReasoning: { override: "max", effort: "low", active: true },
+      },
+      () => "high",
+    );
+    expect(html).not.toContain("reasoningAutoButton");
+  });
+
+  it("offers the Auto link on the last card while a turn is running", () => {
+    // The tail card of the last closed turn stays the control during a run;
+    // the projection folds the effort-less clear even mid-turn.
+    const html = renderCard({
+      codingWorkflow: { mode: "auto", active: true },
+      codingReasoning: {
+        override: null,
+        userEffort: "high",
+        effort: "high",
+        running: true,
+        active: true,
+      },
+    });
+    expect(html).toContain("reasoningAutoButton");
+  });
+
+  it("keeps the Auto link off a finished turn's card", () => {
+    const html = renderTurn(
+      1,
+      {
+        mode: "auto",
+        active: true,
+        latest: 2,
+        turns: [{ turn: 1, mode: "auto" }],
+      },
+      {
+        override: null,
+        userEffort: "high",
+        effort: "high",
+        active: true,
+        latest: 2,
+        turns: [
+          { turn: 1, override: null, userEffort: "high", effort: "high" },
+        ],
+      },
+    );
+    expect(html).toContain("reasoningSourceOverride");
+    expect(html).not.toContain("reasoningAutoButton");
   });
 
   it("renders the card with design-token classes instead of inline styles", () => {
@@ -515,12 +643,125 @@ describe("workflow mode card", () => {
     expect(html).toContain("workflowSwitchHint");
   });
 
-  it("treats a turn without history data as interactive", () => {
-    // An older Host publishes no `latest`; the card must keep working.
+  it("keeps a card read-only when the projection names no live turn", () => {
+    // A value without `latest` (older Host or a malformed cell) cannot tell
+    // history from the live turn, so the safe answer is a frozen card.
     const html = renderTurn(3, { mode: "consult", active: true });
     expect(html).toContain("workflowModeConsult");
+    expect(count(html, "disabled")).toBe(4);
+    expect(html).not.toContain("workflowSwitchHint");
+  });
+
+  it("keeps the newest closed turn interactive while the next one runs", () => {
+    // `latest` names the newest closed turn: the running one publishes no card
+    // until `turn/end`, so turn 2's card must stay the control.
+    const html = renderTurn(2, {
+      mode: "code",
+      active: true,
+      latest: 2,
+      turns: [
+        { turn: 1, mode: "review" },
+        { turn: 2, mode: "code" },
+      ],
+    });
+    expect(html).toContain("workflowModeCode");
     expect(html).not.toContain("disabled");
     expect(html).toContain("workflowSwitchHint");
+  });
+
+  it("reads the turn from the slot's TurnLocation owner prop", () => {
+    // `conversation.chat.turnTail` hands `turn` as `{ kind, turn }`; reading
+    // that as a number froze every card and hid its reasoning row.
+    const html = renderToStaticMarkup(
+      createElement(WorkflowModeCard, {
+        t,
+        turn: { kind: "turn", turn: 2 },
+        execute: async () => ({ ok: true }),
+        useProjection: (key: string) =>
+          key === "codingWorkflow"
+            ? {
+                mode: "code",
+                active: true,
+                latest: 2,
+                turns: [
+                  { turn: 1, mode: "review" },
+                  { turn: 2, mode: "code" },
+                ],
+              }
+            : {
+                override: null,
+                userEffort: null,
+                effort: "low",
+                active: true,
+                latest: 2,
+                turns: [{ turn: 2, override: null, userEffort: null, effort: "low" }],
+              },
+      } as any),
+    );
+    expect(html).toContain("workflowModeCode");
+    expect(html).not.toContain("disabled");
+    expect(html).toContain("reasoningTitle");
+    expect(html).toContain("Low");
+  });
+
+  it("keeps the reasoning line when a frozen card has no snapshot yet", () => {
+    // The tail is published the instant `turn/end` arrives, so a card can
+    // render before its reasoning snapshot lands; the line must not vanish.
+    const html = renderTurn(
+      2,
+      {
+        mode: "code",
+        active: true,
+        latest: 3,
+        turns: [{ turn: 1, mode: "review" }],
+      },
+      {
+        override: null,
+        userEffort: "high",
+        effort: "high",
+        active: true,
+        latest: 3,
+        turns: [],
+      },
+    );
+    expect(html).toContain("reasoningTitle");
+    expect(html).toContain("High");
+  });
+
+  it("keeps a finished card byte-identical while the session state moves", () => {
+    // Regression: every historical card used to read the live projection, so a
+    // switch re-rendered the whole transcript. Re-rendering with a moved state
+    // must produce the exact same markup.
+    let workflow: Record<string, unknown> = {
+      mode: "code",
+      active: true,
+      latest: 2,
+      turns: [
+        { turn: 1, mode: "review" },
+        { turn: 2, mode: "code" },
+      ],
+    };
+    const reasoning = {
+      override: null,
+      userEffort: null,
+      effort: "low",
+      active: true,
+      latest: 2,
+      turns: [{ turn: 1, override: null, userEffort: null, effort: "low" }],
+    };
+    const card = () =>
+      renderToStaticMarkup(
+        createElement(WorkflowModeCard, {
+          t,
+          turn: 1,
+          execute: async () => ({ ok: true }),
+          useProjection: (key: string) =>
+            key === "codingWorkflow" ? workflow : reasoning,
+        }),
+      );
+    const before = card();
+    workflow = { ...workflow, mode: "consult", latest: 3 };
+    expect(card()).toBe(before);
   });
 });
 
