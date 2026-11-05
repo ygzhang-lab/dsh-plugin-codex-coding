@@ -18,7 +18,7 @@ await build({
   platform: 'node',
   target: 'node20',
   format: 'esm',
-  external: ['@deepseek-ai/*'],
+  external: ['@deepseek-ai/*', 'zod'],
   sourcemap: false,
   logLevel: 'info',
   entryPoints: {
