@@ -10,6 +10,7 @@ import { CODING_PRESET_ID } from '../src/workflow.js'
 const initial: ReasoningProjectionState = reasoningProjection.init({
   agentPreset: CODING_PRESET_ID,
 })
+const noTurns = { latest: 0, turns: [] }
 
 function run(
   state: ReasoningProjectionState,
@@ -44,10 +45,11 @@ describe('reasoning projection', () => {
       userEffort: null,
       effort: null,
       active: true,
+      ...noTurns,
     })
     expect(reasoningProjection.wire.view(initial)).toEqual(initial)
     expect(reasoningProjection.stateSchema.parse(initial)).toEqual(initial)
-    expect(reasoningProjection.stateVersion).toBe(2)
+    expect(reasoningProjection.stateVersion).toBe(3)
   })
 
   it('stays inactive for another preset and for delegated sessions', () => {
@@ -79,6 +81,7 @@ describe('reasoning projection', () => {
       userEffort: 'low',
       effort: null,
       active: true,
+      ...noTurns,
     })
   })
 
@@ -90,6 +93,7 @@ describe('reasoning projection', () => {
       userEffort: null,
       effort: null,
       active: true,
+      ...noTurns,
     })
   })
 
@@ -158,5 +162,42 @@ describe('reasoning projection', () => {
       const view = reasoningProjection.wire.view(state)
       expect(view).toEqual(JSON.parse(JSON.stringify(view)))
     }
+  })
+})
+
+describe('per-turn reasoning history', () => {
+  function fold(events: readonly unknown[]): ReasoningProjectionState {
+    return events.reduce<ReasoningProjectionState>(run, initial)
+  }
+
+  it('keeps the level each completed turn actually used', () => {
+    const state = fold([
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'request/header', data: { header: { config: { reasoningEffort: 'low' } } } },
+      { type: 'turn/end', data: { turn: 1 } },
+      chatBox('medium'),
+      { type: 'turn/start', data: { turn: 2 } },
+      { type: 'request/header', data: { header: { config: { reasoningEffort: 'medium' } } } },
+      { type: 'turn/end', data: { turn: 2 } },
+    ])
+    expect(state.effort).toBe('medium')
+    expect(state.turns).toEqual([
+      { turn: 1, override: null, userEffort: null, effort: 'low' },
+      { turn: 2, override: null, userEffort: 'medium', effort: 'medium' },
+    ])
+  })
+
+  it('advances `latest` at the start of a turn and bounds the history', () => {
+    const afterStart = run(initial, { type: 'turn/start', data: { turn: 7 } })
+    expect(afterStart.latest).toBe(7)
+    expect(afterStart.turns).toEqual([])
+
+    const events = []
+    for (let turn = 1; turn <= 120; turn += 1) {
+      events.push({ type: 'turn/start', data: { turn } }, { type: 'turn/end', data: { turn } })
+    }
+    const state = fold(events)
+    expect(state.turns).toHaveLength(100)
+    expect(state.turns.at(-1)?.turn).toBe(120)
   })
 })

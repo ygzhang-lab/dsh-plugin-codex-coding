@@ -4,6 +4,7 @@ import { workflowProjection, CODING_PRESET_ID } from '../src/workflow.js'
 import type { WorkflowProjectionState } from '../src/workflow.js'
 
 const initial: WorkflowProjectionState = workflowProjection.init({ agentPreset: CODING_PRESET_ID })
+const noTurns = { latest: 0, turns: [] }
 
 function run(state: WorkflowProjectionState, event: unknown): WorkflowProjectionState {
   return workflowProjection.apply(state, event)
@@ -11,20 +12,21 @@ function run(state: WorkflowProjectionState, event: unknown): WorkflowProjection
 
 describe('workflow projection', () => {
   it('starts in auto and keeps the wire view the same shape', () => {
-    expect(initial).toEqual({ mode: 'auto', active: true })
-    expect(workflowProjection.wire.view(initial)).toEqual({ mode: 'auto', active: true })
-    expect(workflowProjection.stateSchema.parse(initial)).toEqual({ mode: 'auto', active: true })
+    expect(initial).toEqual({ mode: 'auto', active: true, ...noTurns })
+    expect(workflowProjection.wire.view(initial)).toEqual({ mode: 'auto', active: true, ...noTurns })
+    expect(workflowProjection.stateSchema.parse(initial)).toEqual({ mode: 'auto', active: true, ...noTurns })
+    expect(workflowProjection.stateVersion).toBe(3)
   })
 
   it('stays inactive for sessions created by another preset', () => {
     const other = workflowProjection.init({ agentPreset: 'ptc' })
-    expect(other).toEqual({ mode: 'auto', active: false })
-    expect(workflowProjection.init()).toEqual({ mode: 'auto', active: false })
-    expect(workflowProjection.init({})).toEqual({ mode: 'auto', active: false })
+    expect(other).toEqual({ mode: 'auto', active: false, ...noTurns })
+    expect(workflowProjection.init()).toEqual({ mode: 'auto', active: false, ...noTurns })
+    expect(workflowProjection.init({})).toEqual({ mode: 'auto', active: false, ...noTurns })
     // Inactive sessions still publish a value: the Host forwards this block
     // inside `api-session/added`, which rejects an `undefined` value and would
     // otherwise make creating a session of another preset fail.
-    expect(workflowProjection.wire.view(other)).toEqual({ mode: 'auto', active: false })
+    expect(workflowProjection.wire.view(other)).toEqual({ mode: 'auto', active: false, ...noTurns })
     expect(workflowProjection.wire.viewSchema.parse(other)).toEqual(other)
   })
 
@@ -42,7 +44,7 @@ describe('workflow projection', () => {
 
   it('stays inactive for delegated subagent sessions', () => {
     expect(workflowProjection.init({ agentPreset: CODING_PRESET_ID, delegationDepth: 1 }))
-      .toEqual({ mode: 'auto', active: false })
+      .toEqual({ mode: 'auto', active: false, ...noTurns })
   })
 
   it('follows a /workflow command', () => {
@@ -50,7 +52,7 @@ describe('workflow projection', () => {
       type: 'command/run',
       data: { name: 'workflow', args: 'review' },
     })
-    expect(state).toEqual({ mode: 'review', active: true })
+    expect(state).toEqual({ mode: 'review', active: true, ...noTurns })
   })
 
   it('activates a session from the Host preset-selection event', () => {
@@ -59,8 +61,8 @@ describe('workflow projection', () => {
     const cold = workflowProjection.init({ agentPreset: 'ptc' })
     const select = { type: 'agent-preset/selected', data: { agentPreset: CODING_PRESET_ID } }
     const active = run(cold, select)
-    expect(active).toEqual({ mode: 'auto', active: true })
-    expect(workflowProjection.wire.view(active)).toEqual({ mode: 'auto', active: true })
+    expect(active).toEqual({ mode: 'auto', active: true, ...noTurns })
+    expect(workflowProjection.wire.view(active)).toEqual({ mode: 'auto', active: true, ...noTurns })
     expect(run(active, select)).toBe(active)
   })
 
@@ -69,7 +71,7 @@ describe('workflow projection', () => {
       type: 'agent-preset/selected',
       data: { agentPreset: 'ptc' },
     })
-    expect(switched).toEqual({ mode: 'auto', active: false })
+    expect(switched).toEqual({ mode: 'auto', active: false, ...noTurns })
   })
 
   it('never writes a plugin-specific event type', () => {
@@ -97,11 +99,11 @@ describe('workflow projection', () => {
       type: 'tool/call',
       data: { name: 'coding_mode', arguments: '{"mode":"consult"}' },
     })
-    expect(state).toEqual({ mode: 'consult', active: true })
+    expect(state).toEqual({ mode: 'consult', active: true, ...noTurns })
     expect(run(state, {
       type: 'tool/call',
       data: { name: 'coding_mode', arguments: '{"mode":"auto"}' },
-    })).toEqual({ mode: 'auto', active: true })
+    })).toEqual({ mode: 'auto', active: true, ...noTurns })
   })
 
   it('ignores malformed tool arguments and unrelated events', () => {
@@ -110,6 +112,61 @@ describe('workflow projection', () => {
       data: { name: 'coding_mode', arguments: '{' },
     })).toBe(initial)
     expect(run(initial, { type: 'user/message', data: {} })).toBe(initial)
-    expect(run(initial, { type: 'turn/start', data: { turn: 1 } })).toBe(initial)
+    expect(run(initial, { type: 'turn/start', data: { turn: 'one' } })).toBe(initial)
+  })
+})
+
+describe('per-turn mode history', () => {
+  function turnStart(turn: number) {
+    return { type: 'turn/start', data: { turn } }
+  }
+
+  function turnEnd(turn: number) {
+    return { type: 'turn/end', data: { turn } }
+  }
+
+  /** Fold a list of events the way the Host folds the session log. */
+  function fold(events: readonly unknown[]): WorkflowProjectionState {
+    return events.reduce<WorkflowProjectionState>(run, initial)
+  }
+
+  it('freezes the mode each completed turn ran under', () => {
+    const state = fold([
+      turnStart(1),
+      turnEnd(1),
+      { type: 'command/run', data: { name: 'workflow', args: 'review' } },
+      turnStart(2),
+      turnEnd(2),
+      { type: 'command/run', data: { name: 'workflow', args: 'code' } },
+    ])
+    expect(state.mode).toBe('code')
+    expect(state.turns).toEqual([
+      { turn: 1, mode: 'auto' },
+      { turn: 2, mode: 'review' },
+    ])
+  })
+
+  it('advances `latest` at the start of a turn so the previous card locks', () => {
+    const afterTurn = fold([turnStart(1), turnEnd(1)])
+    expect(afterTurn.latest).toBe(1)
+    // Turn 2 has begun but has not finished: turn 1 is already history.
+    expect(run(afterTurn, turnStart(2)).latest).toBe(2)
+    expect(run(afterTurn, turnStart(2)).turns).toEqual([{ turn: 1, mode: 'auto' }])
+  })
+
+  it('rewrites a turn entry instead of duplicating it', () => {
+    const state = fold([turnStart(1), turnEnd(1), turnEnd(1)])
+    expect(state.turns).toEqual([{ turn: 1, mode: 'auto' }])
+  })
+
+  it('bounds the history', () => {
+    const events = []
+    for (let turn = 1; turn <= 120; turn += 1) {
+      events.push(turnStart(turn), turnEnd(turn))
+    }
+    const state = fold(events)
+    expect(state.turns).toHaveLength(100)
+    expect(state.turns[0]?.turn).toBe(21)
+    expect(state.turns.at(-1)?.turn).toBe(120)
   })
 })

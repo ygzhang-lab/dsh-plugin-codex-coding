@@ -6,6 +6,7 @@ import {
   CodingSettingsPage,
   installCardStyles,
   WorkflowModeCard,
+  WorkflowCommandRow,
   inject,
   NS,
 } from "../src/client/index.js";
@@ -238,6 +239,56 @@ describe("Coding settings page", () => {
     });
     expect(execute).toHaveBeenCalledWith("session-1", "/workflow review", []);
   });
+
+  it("renders the workflow command as one confirmation line", () => {
+    const { ctx, registrations } = harness();
+    apply(ctx);
+    const entry = registrations.find(
+      (item) => item.name === "conversation.chat.commandview",
+    );
+    // Keyed by the command name the chat outlet asks for, so this entry
+    // replaces the generic command card instead of shadowing it.
+    expect(entry).toMatchObject({ key: "workflow" });
+    expect(entry.component).toBeTypeOf("function");
+  });
+
+  it("keeps the switch, its failure, and a bare status distinct", () => {
+    const render = (node: unknown) =>
+      renderToStaticMarkup(
+        createElement(WorkflowCommandRow, { t, node } as any),
+      );
+    // The full handler text is dropped: the card above already shows the mode.
+    const switched = render({
+      name: "workflow",
+      args: "review",
+      outcome: {
+        kind: "success",
+        text: "workflow mode set to review.\nFollow Review mode now.",
+      },
+    });
+    expect(switched).toContain("workflowTitle");
+    expect(switched).toContain("workflowModeReview");
+    expect(switched).not.toContain("workflow mode set to review");
+    // A failed switch keeps the handler's reason.
+    const failed = render({
+      name: "workflow",
+      args: "bogus",
+      outcome: { kind: "error", text: 'unknown workflow mode "bogus"' },
+    });
+    expect(failed).toContain("dsh-coding-command-error");
+    expect(failed).toContain("unknown workflow mode");
+    // A bare `/workflow` is a status request, so its text stays.
+    const status = render({
+      name: "workflow",
+      args: null,
+      outcome: { kind: "success", text: "workflow mode: consult" },
+    });
+    expect(status).toContain("workflow mode: consult");
+    // While the command is still running nothing is drawn.
+    expect(render({ name: "workflow", args: "review", outcome: null })).toBe(
+      "",
+    );
+  });
 });
 
 describe("workflow mode card", () => {
@@ -389,6 +440,87 @@ describe("workflow mode card", () => {
     expect(html).toContain('class="dsh-coding-card"');
     expect(html).toContain("dsh-coding-card-button");
     expect(html).not.toContain("style=");
+  });
+
+  function renderTurn(
+    turn: number,
+    workflow: Record<string, unknown>,
+    reasoning?: Record<string, unknown>,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(WorkflowModeCard, {
+        t,
+        turn,
+        execute: async () => ({ ok: true }),
+        useProjection: (key: string) =>
+          key === "codingWorkflow" ? workflow : reasoning,
+      }),
+    );
+  }
+
+  it("keeps a finished turn's card on the mode that turn ran under", () => {
+    // Turn 1 ran in review; the session has since switched to code.
+    const html = renderTurn(1, {
+      mode: "code",
+      active: true,
+      latest: 2,
+      turns: [
+        { turn: 1, mode: "review" },
+        { turn: 2, mode: "code" },
+      ],
+    });
+    expect(html).toContain("workflowModeReview");
+    expect(html).toContain("workflowManualStatus");
+    // Every button is disabled, so history cannot be rewritten.
+    expect(count(html, "disabled")).toBe(4);
+    expect(count(html, 'aria-pressed="true"')).toBe(1);
+  });
+
+  it("freezes the reasoning row of a finished turn", () => {
+    const html = renderTurn(
+      1,
+      {
+        mode: "code",
+        active: true,
+        latest: 2,
+        turns: [{ turn: 1, mode: "auto" }],
+      },
+      {
+        override: "max",
+        userEffort: null,
+        effort: "high",
+        active: true,
+        latest: 2,
+        turns: [{ turn: 1, override: null, userEffort: null, effort: "low" }],
+      },
+    );
+    expect(html).toContain("Low");
+    expect(html).toContain("reasoningSourceAuto");
+    expect(html).not.toContain("Max");
+    expect(html).not.toContain("High");
+  });
+
+  it("keeps the newest turn's card interactive", () => {
+    const html = renderTurn(2, {
+      mode: "code",
+      active: true,
+      latest: 2,
+      turns: [
+        { turn: 1, mode: "review" },
+        { turn: 2, mode: "auto" },
+      ],
+    });
+    expect(html).toContain("workflowModeCode");
+    expect(html).not.toContain("disabled");
+    expect(html).toContain("workflowSwitchHint");
+  });
+
+  it("treats a turn without history data as interactive", () => {
+    // An older Host publishes no `latest`; the card must keep working.
+    const html = renderTurn(3, { mode: "consult", active: true });
+    expect(html).toContain("workflowModeConsult");
+    expect(html).not.toContain("disabled");
+    expect(html).toContain("workflowSwitchHint");
   });
 });
 
