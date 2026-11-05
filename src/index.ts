@@ -12,6 +12,9 @@ export default class DshCodingService extends Service {
   static Config = z.object({
     reasoning: z.union(['auto', 'low', 'high', 'max'] as const).default('auto').volatile(),
     localSkills: z.boolean().default(true).volatile(),
+    // The conversation language. auto follows the DSH interface locale, then
+    // the host locale; zh/en pin it. Only these two languages ship.
+    language: z.union(['auto', 'zh', 'en'] as const).default('auto').volatile(),
     disabledPlugins: z.array(z.string()).default([]).volatile(),
   })
 
@@ -29,6 +32,7 @@ export default class DshCodingService extends Service {
     return normalizeOptions({
       reasoning: this.config.reasoning.get(),
       localSkills: this.config.localSkills.get(),
+      language: this.config.language.get(),
       disabledPlugins: this.config.disabledPlugins.get(),
     })
   }

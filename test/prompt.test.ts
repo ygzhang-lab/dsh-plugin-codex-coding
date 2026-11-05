@@ -29,11 +29,11 @@ describe('CODING_CONTRACT', () => {
       'coding_mode',
       'apply_patch',
       'git diff',
-      'Consult',
+      'Q&A',
       'Review',
       'Do not edit files, run tests, or create a todo list',
-      'In Consult mode, deliver exactly',
-      'Do not use the Code-mode "files touched / verification" template',
+      'In Q&A mode, deliver exactly',
+      'Do not use the Codex Coding "files touched / verification" template',
       'Never report a passing check you did not run',
       'Do not commit, push, tag, or open a pull request unless the user asks',
     ]) {
@@ -43,5 +43,11 @@ describe('CODING_CONTRACT', () => {
 
   it('contains no unresolved prompt variables', () => {
     expect(CODING_CONTRACT).not.toMatch(/\{\{[a-z_]+\}\}/)
+  })
+
+  // This section rides in every request. The budget keeps later additions
+  // from quietly growing the per-request prompt.
+  it('stays within the per-request size budget', () => {
+    expect(CODING_CONTRACT.length).toBeLessThanOrEqual(4600)
   })
 })

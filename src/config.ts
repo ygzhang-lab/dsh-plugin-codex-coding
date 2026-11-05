@@ -6,18 +6,24 @@
  * and must not spend an extra model request or expose a reasoning transcript.
  */
 
+import { normalizeLanguageMode, type LanguageMode } from './language.js'
+
 export type ReasoningMode = 'auto' | 'low' | 'high' | 'max'
 export type ReasoningLevel = 'low' | 'high' | 'max'
 export interface ReasoningChoice {
   level: ReasoningLevel
   score: number
   reason: string
+  /** Provider effort id the user picked in the chat box; overrides `level`. */
+  effort?: string
 }
 
 export interface CodingOptions {
   reasoning: ReasoningMode
   localSkills: boolean
   disabledPlugins: readonly string[]
+  /** Conversation language; auto follows the DSH interface, then the host. */
+  language?: LanguageMode
 }
 
 export interface PluginOption {
@@ -103,6 +109,7 @@ export const DEFAULT_OPTIONS: CodingOptions = {
   reasoning: 'auto',
   localSkills: true,
   disabledPlugins: [],
+  language: 'auto',
 }
 
 /**
@@ -116,6 +123,7 @@ export function normalizeOptions(value: Partial<CodingOptions> | undefined): Cod
   return {
     reasoning: reasoning === 'low' || reasoning === 'high' || reasoning === 'max' ? reasoning : 'auto',
     localSkills: value?.localSkills !== false,
+    language: normalizeLanguageMode(value?.language),
     disabledPlugins: Array.isArray(disabled)
       ? [...new Set(disabled.filter((item): item is string => (
         typeof item === 'string' && !CORE_MODULE_SET.has(item)
@@ -309,4 +317,15 @@ export function mapEffort(desired: ReasoningLevel, supported: readonly string[])
     if (available.has(id)) return id
   }
   return undefined
+}
+
+/**
+ * Map a provider effort id back to the Coding level it stands for. The chat
+ * box reports provider ids (`minimal`, `medium`, `xhigh`), while this preset
+ * reasons in `low`/`high`/`max`; unknown ids stay at the conservative default.
+ */
+export function levelForEffort(effort: string): ReasoningLevel {
+  if (effort === 'max' || effort === 'xhigh') return 'max'
+  if (effort === 'high' || effort === 'medium') return 'high'
+  return 'low'
 }

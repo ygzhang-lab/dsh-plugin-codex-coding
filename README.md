@@ -1,23 +1,24 @@
-# DSH Coding
+# DSH Codex Coding
 
 一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Codex 风格 Coding 插件：用一份**交付契约**约束工作流，用 `apply_patch` 做外科式修改，并支持推理等级自动切换、本地 Skill 开关和 DSH 插件工具开关。
 
-它由 **一个自定义 DSH 预设（Coding 模式）+ 三个自定义 DSH 工具** 组成。插件本身不在 Host 启动时改变任何 Agent 行为；唯一入口是在新建会话时选择 **Coding 模式** 预设。
+它由 **一个自定义 DSH 预设（Codex Coding）+ 三个自定义 DSH 工具** 组成。插件本身不在 Host 启动时改变任何 Agent 行为；唯一入口是在新建会话时选择 **Codex Coding** 预设。
 
-发布包名是 `dsh-plugin-coding`，在 DSH 中的插件显示名仍是 **DSH Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-coding](https://github.com/ygzhang-lab/dsh-plugin-coding)。
+发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
 **版本号**：插件采用 `0.2.<内部流水号>`，只把前两位对齐到 DSH 的 `0.2.x`；第三位是内部构建序号，与 DSH 的补丁号或 rc 号没有对应关系，实际兼容范围以 `engines.dsh` 为准。当前版本 `0.2.1`，详见[版本策略](#版本策略)。
 
 ## 特性
 
 - **交付契约**：固定为「先建立上下文 → 定义完成标准 → 最小修改 → 最窄验证 → 紧凑交付」五段。契约作为独立的 `coding:contract` 系统提示段落，不塞进人格前缀。
-- **工作流三模式**：默认自动选择 **Consult / Review / Code**；问答和方案讨论不会自动改代码，也可用 `coding_mode` 手动切换。
+- **工作流三模式**：默认自动选择 **问答模式 / 审查模式 / Codex 模式**；问答和方案讨论不会自动改代码，也可用 `coding_mode` 手动切换。
 - **Codex 补丁工具**：新增 `apply_patch`，支持一次调用多文件、多 hunk 和移动（删除在底层文件系统提供 `remove` 时可用），严格解析 Codex patch 语法；上下文不匹配时给出 expected 与文件片段，而不是静默改错文件。
 - **Codex 工作流**：先检查、再计划（`todo_write`）、小步修改、运行最窄验证、检查自己的 diff，最后简洁汇报。
 - **DSH 原生适配**：优先复用 `read` / `write` / `edit` / `glob` / `grep` / `bash` / `job_*` / `todo_write` / `web_*` 等内置工具，不重复造轮子。
 - **推理等级自动切换**：`auto` 默认 **Low**；只有多文件，或一个功能模块的审查/重构，才用 **High**；项目级搭建/重构/审查或一次性无法修复的 Bug 才用 **Max**；问答、建议、简单修复、单文件审查始终 Low。
 - **本地 Skill 开关**：一键允许或禁止加载项目目录、用户目录中已安装的 Skill。
 - **DSH 插件工具开关**：多选控制该预设中已安装的 DSH 工具插件是否向 Agent 暴露工具。
+- **中英双语**：只带中文/英文两种语言包；界面跟随 DSH 界面语言，会话回复与工作流 Todo 用同一种语言，非中文环境一律英文。
 - **可视化配置 + 配置文件**：DSH Desktop 中通过插件配置页修改；CLI 中通过 profile 的 `cordis.patch.yml` 修改。
 - **低 Token 开销**：不额外调用模型做复杂度判断；`coding_context` 一次收集仓库状态、`AGENTS.md`、diff 统计和验证命令，替代多次探索性 shell。
 
@@ -37,19 +38,19 @@
 
 推理等级和工作流是两件事：`Low` 只表示推理预算低，不代表必须改代码。
 
-| 模式 | 适用场景 | 行为 |
-|---|---|---|
-| `Consult` | 问答、建议、方案比较、先规划不执行 | 先回答；不编辑、不跑测试、不建 todo；给 1–3 个选项、推荐和短计划；以“需要你决定什么”结尾 |
-| `Review` | 代码审查、只读检查 | 只给 findings（文件:行 + 复现路径），按影响排序；不自动修 |
-| `Code` | 明确要修复、实现、修改、重构、运行 | 走完整五段式交付契约 |
+| 模式                | 适用场景                           | 行为                                                                                     |
+| ------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| 问答模式（Q&A）     | 问答、建议、方案比较、先规划不执行 | 先回答；不编辑、不跑测试、不建 todo；给 1–3 个选项、推荐和短计划；以“需要你决定什么”结尾 |
+| 审查模式（Review）  | 代码审查、只读检查                 | 只给 findings（文件:行 + 复现路径），按影响排序；不自动修                                |
+| Codex 模式（Codex） | 明确要修复、实现、修改、重构、运行 | 走完整五段式交付契约                                                                     |
 
 默认 `auto` 由提示词按请求选择。需要手动切换时，对 Agent 说：
 
 ```text
 coding_mode()                  # 查看当前模式
-coding_mode(mode="consult")    # 本次会话固定为对话/咨询模式
+coding_mode(mode="consult")    # 本次会话固定为问答模式
 coding_mode(mode="review")     # 只读审查模式
-coding_mode(mode="code")       # 进入编码模式
+coding_mode(mode="code")       # 进入 Codex 模式
 coding_mode(mode="auto")       # 清除手动覆盖
 ```
 
@@ -59,30 +60,66 @@ coding_mode(mode="auto")       # 清除手动覆盖
 
 Coding 会话每完成一轮，对话流末尾会出现一张 **工作流模式** 卡片（非 Coding 预设的会话不显示）：
 
-- **自动**：由模型按本轮请求在 Consult / Review / Code 中选择；
-- **手动 Review**（或 Consult / Code）：本会话固定，模式说明会作为动态系统提示进入下一次请求；
-- 卡片上有 **自动 / 咨询 / 审查 / 编码** 四个按钮，点击即切换，对后续消息生效；切换结果写入会话日志，刷新或恢复会话后卡片仍显示同一模式。即使模型之后调用了 `coding_mode`，卡片也会同步。
+- **自动**：由模型按本轮请求在 问答模式 / 审查模式 / Codex Coding 中选择；
+- **手动 审查模式**（或 问答模式 / Codex Coding）：本会话固定，模式说明会作为动态系统提示进入下一次请求；
+- 卡片上有 **自动 / 问答模式 / 审查模式 / Codex Coding** 四个按钮，点击即切换，对后续消息生效；切换结果写入会话日志，刷新或恢复会话后卡片仍显示同一模式。即使模型之后调用了 `coding_mode`，卡片也会同步。
+- 卡片上另有一行 **推理等级**，显示本会话真正生效的等级和来源：`自动`（最近一次请求实际发送的 effort）、`会话覆盖`（输入框选择器里手选过，或 `coding_reasoning` 设过）、`设置固定`（插件设置页固定）；本轮还没发出请求时显示 `待确定`。
+- 卡片视觉直接复用 Desktop 的设计 token：`--dsw-alias-border-l1` 边框、`--dsw-radius-lg` 圆角、`--dsw-alias-label-*` 文字色、`--dsw-static-neutral-50/850` 明暗背景、`--dsw-focus-ring-*` 焦点环；样式按宿主自身的 `<style data-plugin-css>` 方式注入一次，和会话里其它官方卡片保持同一套观感。
 
 等价的手动方式是在输入框直接执行命令：
 
 ```text
 /workflow              # 查看当前模式
-/workflow review       # 本会话固定为 Review
+/workflow review       # 本会话固定为审查模式
 /workflow auto         # 清除覆盖，回到自动选择
 ```
 
-卡片和按钮只用于切换工作流模式；推理等级仍在插件设置页或用 `coding_reasoning` 调整。
+卡片上的按钮只用于切换工作流模式；推理等级那一行只读，调整仍用插件设置页或 `coding_reasoning`。
+
+### 工作流提示框中的推理等级
+
+`coding:workflow` 动态提示（order 15）只写**等级来源**，不写等级本身和分类依据：
+
+```text
+Workflow mode: auto. Choose Q&A, Review, or Codex Coding from the current request; ...
+Reasoning: auto (level chosen by the preset at each step)
+```
+
+| 提示内容                                                     | 含义                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------- |
+| `Reasoning: auto (level chosen by the preset at each step)`   | 自动：等级由分类器在 pre-step 决定，这行对所有自动请求逐字节相同 |
+| `Reasoning: manual (pinned by Coding settings)`               | 手动：插件设置页把等级固定为 `low`/`high`/`max`          |
+| `Reasoning: manual (session override)`                       | 手动：本会话用 `coding_reasoning(effort=...)` 覆盖过      |
+| `Reasoning: manual (picked medium in the chat box)`           | 手动：用户在输入框的选择器里手选了 `medium`              |
+
+不把等级和分类依据写进提示，是因为 DSH 会把 `systemPrompt.context()` 的贡献合成为**一条** runtime-context 快照消息，任一贡献变化就整条重新追加。等级和依据几乎每轮都变，那样会把整份快照（含语言、工作目录、沙箱策略）反复写进历史；实测长会话曾积累 9 份、约 10k 字符的作废快照。等级仍有两处可见：会话卡片的 **推理等级** 行，以及 `coding_reasoning` 工具输出。
+
+设置页的固定等级优先于会话覆盖；覆盖只在设置为 `auto` 时生效。`coding_reasoning()` 报告的等级始终是实际请求使用的值。
+
+同一份等级信息还有第二个出口：会话卡片上的 **推理等级** 行。它读 `codingReasoning` 会话投影——`request/header` 事件给出最近一次请求实际携带的 `reasoningEffort`，`model/selection` 给出输入框里手选的等级，`coding_reasoning` 的 `tool/call` 事件给出工具覆盖——所以用户不用问模型也能看到当前等级和来源。
+
+### 与 DSH 输入框的模型/推理选择器
+
+DSH 桌面端的聊天输入框可以选模型和推理等级，它会写一条 `model/selection` 事件，Host 用它在下一轮请求里生效。Coding 插件在自己的投影里折叠这条事件，规则是**用户在输入框里选了算数**：
+
+- 推理等级设置为 `auto` 时，一旦用户在输入框里手选了推理等级，该选择成为本会话覆盖，插件不再用分类结果覆盖它；`coding_reasoning(effort="auto")` 或再次手选会更新/清除它。
+- 换模型本身始终生效，插件只读新 route 去查它支持哪些 effort；手选的 effort id 若不被新 route 接受，回退到该等级最接近的 effort（`mapEffort`）。
+- 设置页把等级固定为 `low`/`high`/`max` 时优先级最高，输入框的手选不生效。
+- 手选的 effort id 可能是 `minimal`/`medium`/`xhigh` 这类 provider 取值，卡片按该值原样显示（首字母大写）。
+- 只换模型时，Host 也会把该模型的默认 effort 写进同一条 `model/selection` 事件，因此可能顺带固定一个等级；用 `coding_reasoning(effort="auto")` 可解除。
+
+注意：Host 在用户改模型/等级时还会把它保存为全局默认模型（`saveSelection`），这会影响新会话的初始默认值，与插件无关。
 
 ## 安装
 
 ### 兼容性与依赖
 
-| 项目 | 声明 | 说明 |
-|---|---|---|
-| DSH | `engines.dsh`: `>=0.2.1-rc.5 <0.3.0` | 在 0.2.1-rc.5 完整验证；0.2.2-rc.1 已验证 Host 启动、配置组合与 Client 模块加载，预设行为仍建议在会话中确认 |
-| Node.js | `engines.node`: `>=24.9.0` | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0 |
-| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例 |
-| 插件自带依赖 | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3` | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片） |
+| 项目             | 声明                                                                                                       | 说明                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| DSH              | `engines.dsh`: `>=0.2.1-rc.5 <0.3.0`                                                                       | 在 0.2.1-rc.5 完整验证；0.2.2-rc.1 已验证 Host 启动、配置组合与 Client 模块加载，预设行为仍建议在会话中确认 |
+| Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0         |
+| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                               |
+| 插件自带依赖     | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3`                                                        | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片）                                                      |
 
 peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeers: false`，因此 `dsh plugin add` 可能打印 `missing peer` 警告，这是预期行为；不要为了消除警告把 `@deepseek-ai/cordis` 装进 profile——宿主与插件各加载一份 cordis 会让 `Service` 实例与依赖注入分裂。`dsh plugin add` 结束时出现该警告不影响安装，安装后 `dsh --profile <profile> --dump-config` 能看到 bundle 的两行即说明组合成功。
 
@@ -95,18 +132,18 @@ peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeer
 在 **Plugins / 插件** 页面选择 **Add plugin / 添加插件**，输入：
 
 ```text
-dsh-plugin-coding
+dsh-plugin-codex-coding
 ```
 
-安装并启用 bundle 后，新建会话，在预设选择器中选择 **Coding 模式**。
+安装并启用 bundle 后，新建会话，在预设选择器中选择 **Codex Coding**。
 
 ### CLI
 
 ```bash
-dsh plugin --profile <profile> add dsh-plugin-coding
+dsh plugin --profile <profile> add dsh-plugin-codex-coding
 ```
 
-然后启动该 profile，新建会话并选择 **Coding 模式** 预设：
+然后启动该 profile，新建会话并选择 **Codex Coding** 预设：
 
 ```bash
 dsh --profile <profile>
@@ -119,7 +156,7 @@ dsh --profile <profile>
 ```bash
 pnpm install          # 需要 Node >=24.9.0
 pnpm build
-dsh plugin --profile <profile> add /absolute/path/to/dsh-plugin-coding
+dsh plugin --profile <profile> add /absolute/path/to/dsh-plugin-codex-coding
 ```
 
 DSH Desktop 也可以在 **Plugins → Add plugin** 里直接填本地绝对路径。本地挂载记录的是目录引用，改完源码后重新 `pnpm build`；profile 的 `patchReload` 为 `live` 时会重新加载，未生效则重启 DSH 再试。
@@ -130,8 +167,8 @@ DSH Desktop 也可以在 **Plugins → Add plugin** 里直接填本地绝对路�
 
 bundle 只插入两类行：
 
-1. `dsh-plugin-coding`：Host 设置服务与 Web 配置页；不注册 Agent 工具、不注入提示词。
-2. `preset-coding`：声明 **Coding 模式** 预设；实际的人格、工具、Skill、推理策略都在这个预设内部挂载。
+1. `dsh-plugin-codex-coding`：Host 设置服务与 Web 配置页；不注册 Agent 工具、不注入提示词。
+2. `preset-coding`：声明 **Codex Coding** 预设；实际的人格、工具、Skill、推理策略都在这个预设内部挂载。
 
 因此：
 
@@ -139,7 +176,7 @@ bundle 只插入两类行：
 - 禁用或卸载 bundle 后，预设及其工具一起消失。
 - Host 侧没有常驻的 Agent 行为，只有一份可读取的配置。
 
-> DSH 只对内置预设按界面语言本地化；自定义预设的 `name` 和 `description` 会原样显示。这里的预设名固定为 **Coding 模式**，介绍保留中英文双语。
+> DSH 只对内置预设按界面语言本地化；自定义预设的 `name` 和 `description` 会原样显示。这里的预设名固定为 **Codex Coding**，介绍保留中英文双语。
 
 ## 配置
 
@@ -152,6 +189,9 @@ bundle 只插入两类行：
   - `Low` / `High` / `Max`：固定等级
 - **Local skills**
   - 允许 / 禁止本地 Skill
+- **Conversation language / 会话语言**
+  - `Automatic`：跟随 DSH 界面语言，未设置时跟随宿主环境语言；不是中文即英文
+  - `中文` / `English`：固定会话语言
 - **Installed DSH plugins**
   - 多选：勾选表示允许该插件的工具；取消勾选只隐藏工具，不卸载插件
 
@@ -162,16 +202,37 @@ bundle 只插入两类行：
 编辑当前 profile 的 `cordis.patch.yml`：
 
 ```yaml
-- id: dsh-plugin-coding
-  name: dsh-plugin-coding
+- id: dsh-plugin-codex-coding
+  name: dsh-plugin-codex-coding
   config:
-    reasoning: auto          # auto | low | high | max
-    localSkills: true        # true | false
-    disabledPlugins:         # 要隐藏工具的工具插件模块名
-      - '@deepseek-ai/dsh-tool-web'
+    reasoning: auto # auto | low | high | max
+    localSkills: true # true | false
+    language: auto # auto | zh | en
+    disabledPlugins: # 要隐藏工具的工具插件模块名
+      - "@deepseek-ai/dsh-tool-web"
 ```
 
-注意：Loader 的按 id 覆盖会**整体替换** `config`，因此覆盖时把三个字段都写全。
+注意：Loader 的按 id 覆盖会**整体替换** `config`，因此覆盖时把四个字段都写全。
+
+## 语言
+
+插件包内只有**中文**和**英文**两种语言包，没有第三种语言的翻译，也不做机器翻译：
+
+| 位置                                   | 语言来源                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------- |
+| 插件管理器标题/描述（`locale/*.json`） | DSH 界面语言，由界面语言服务挑选，缺 `zh` 时用 `en`                          |
+| 设置页与会话模式卡片                   | 同上，`ctx.locale.register(ns, { zh, en })`，界面语言切换即时生效             |
+| 会话交互（回复、追问、交付说明）         | `coding:language` 系统提示：自动 = DSH 界面语言 → 宿主环境语言 → 英文        |
+| 工作流 Todo（条目与状态说明）           | 同上，与回复同一种语言；代码、路径、命令、报错原文保持原样                   |
+
+自动模式的判定顺序：
+
+1. 设置页/`language` 字段为 `zh` 或 `en` 时直接使用；
+2. 否则读取 DSH 已保存的界面语言（`locale.preference`，没有保存过就没有值）；
+3. 否则用宿主环境语言：`LC_ALL` / `LC_MESSAGES` / `LANG`，Windows 上取系统区域设置；
+4. 以 `zh` 开头的标签用中文，其余（`en`、`ja`、`de`、`C`…）一律英文。
+
+宿主侧没有可用的界面语言服务时（例如 headless 运行），第 2 步自动跳过，不会报错。
 
 ## 推理等级自动切换
 
@@ -180,18 +241,18 @@ bundle 只插入两类行：
 1. **请求类型**：问答/建议、简单修复、单文件审查、单文件修改 → `Low`；多文件，或一个功能模块的审查/重构 → `High`；项目级或无法一次修复 → `Max`。
 2. **执行计划**：6 步以上或 5 个以上未完成项才升到 `High`；3 步计划仍是 `Low`；计划**从不**产生 `Max`。
 
-| 等级 | 使用场景 | 使用频率 |
-|---|---|---|
-| `Low` | 问答/建议/指导；简单 Bug 修复；单文件审查；单文件修改；小型计划（通常少于 6 步） | 默认，绝大多数任务 |
-| `High` | 多文件修改；一个功能模块的审查/重构；6 步以上或 5 项以上未完成的计划 | 较少 |
-| `Max` | 创造性项目搭建；项目级重构；项目级代码审查；一次性无法修复的 Bug | 极少 |
+| 等级   | 使用场景                                                                         | 使用频率           |
+| ------ | -------------------------------------------------------------------------------- | ------------------ |
+| `Low`  | 问答/建议/指导；简单 Bug 修复；单文件审查；单文件修改；小型计划（通常少于 6 步） | 默认，绝大多数任务 |
+| `High` | 多文件修改；一个功能模块的审查/重构；6 步以上或 5 项以上未完成的计划             | 较少               |
+| `Max`  | 创造性项目搭建；项目级重构；项目级代码审查；一次性无法修复的 Bug                 | 极少               |
 
 关键约束：
 
 - **任何寻求意见或指导的问答式任务只用 `Low`**，即使问题里出现架构、重构、并发等字眼。
 - `Max` 只保留四类：创造性项目搭建、项目级重构、项目级代码审查、一次性无法修复的 Bug。
 - `High` 只用于多文件，或一个功能模块的审查/重构；普通实现、简单修复、单文件审查都不升 `High`。
-- 同一轮内只升不降；新的一轮重新判定。若模型不支持目标等级，会映射到该模型支持的最接近等级。
+- 同一轮内只升不降；新的一轮重新判定。若模型不支持目标等级，会映射到该模型支持的最接近等级。用户在输入框里手选推理等级、或用 `coding_reasoning` 覆盖时，跳过上述判定，直到覆盖被清除。
 
 这是刻意的低偏差：DeepSeek 在 `Low` 下已能处理绝大多数问答、单文件修改和简单修复；`High` 留给真正的多文件或功能模块审查/重构，`Max` 只留给项目级或无法一次修复的任务。
 
@@ -205,7 +266,7 @@ coding_reasoning(effort="auto")    # 清除会话覆盖
 
 ## 本地 Skill
 
-`Local skills` 打开时，**Coding 模式** 预设挂载：
+`Local skills` 打开时，**Codex Coding** 预设挂载：
 
 - `@deepseek-ai/dsh-skill-filesystem`
 - `@deepseek-ai/dsh-tool-skill`
@@ -216,16 +277,16 @@ coding_reasoning(effort="auto")    # 清除会话覆盖
 
 该预设实际挂载的 DSH 工具插件如下。取消勾选即通过 Agent 作用域的 `ctx.tools.restrict({ deny })` 隐藏对应工具；标为 **核心** 的行由 Coding 工作流强制依赖，复选框只读且始终勾选：
 
-| 插件模块 | 工具 | 核心 |
-|---|---|---|
-| `@deepseek-ai/dsh-tool-bash` | `bash` | ✅ |
-| `@deepseek-ai/dsh-tool-pwsh` | `pwsh` | ✅ |
-| `@deepseek-ai/dsh-tool-fs` | `read`, `write`, `edit`, `apply_patch`, `read_image` | ✅ |
-| `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | |
-| `@deepseek-ai/dsh-tool-jobs` | `job_output`, `job_list`, `job_kill` | |
-| `@deepseek-ai/dsh-tool-todo` | `todo_write` | ✅ |
-| `@deepseek-ai/dsh-tool-web` | `web_search`, `web_fetch` | |
-| `@deepseek-ai/dsh-tool-skill` | `skill` | |
+| 插件模块                          | 工具                                                 | 核心 |
+| --------------------------------- | ---------------------------------------------------- | ---- |
+| `@deepseek-ai/dsh-tool-bash`      | `bash`                                               | ✅   |
+| `@deepseek-ai/dsh-tool-pwsh`      | `pwsh`                                               | ✅   |
+| `@deepseek-ai/dsh-tool-fs`        | `read`, `write`, `edit`, `apply_patch`, `read_image` | ✅   |
+| `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep`                                       |      |
+| `@deepseek-ai/dsh-tool-jobs`      | `job_output`, `job_list`, `job_kill`                 |      |
+| `@deepseek-ai/dsh-tool-todo`      | `todo_write`                                         | ✅   |
+| `@deepseek-ai/dsh-tool-web`       | `web_search`, `web_fetch`                            |      |
+| `@deepseek-ai/dsh-tool-skill`     | `skill`                                              |      |
 
 设计边界：
 
@@ -278,9 +339,9 @@ Codex 兼容的补丁编辑器，用于多文件、多 hunk 或文件移动：
 查看或手动切换当前会话的工作流模式：
 
 - `auto`：清除手动覆盖，由提示词按请求选择。
-- `consult`：问答/咨询/方案模式；不自动编辑、不跑测试、不建 todo。
-- `review`：只读审查模式；只给 findings，不自动修。
-- `code`：完整 Codex 编码工作流。
+- `consult`：问答模式（Q&A）；不自动编辑、不跑测试、不建 todo。
+- `review`：审查模式（Review）；只给 findings，不自动修。
+- `code`：Codex模式；完整编码工作流。
 
 它只改变工作流，不改变推理等级；普通请求不需要调用，只有用户明确要求切换或询问当前模式时才调用。
 
@@ -317,15 +378,17 @@ gh workflow run publish.yml -f dist_tag=latest -f dry_run=false
 ### 目录
 
 ```text
-cordis.patch.yml       bundle 行 + Coding 模式 预设声明
+cordis.patch.yml       bundle 行 + Codex Coding 预设声明
 src/index.ts           Host 设置服务（dshCoding）
 src/preset.ts          预设内的契约注册、工具、推理策略、插件/Skill 限制
 src/prompt.ts          Codex 风格交付契约与工作流模式（coding:contract）
 src/mode.ts            工作流模式状态与手动切换说明
+src/language.ts        会话语言判定（DSH 界面语言 → 宿主语言 → 英文）
 src/patch.ts           Codex patch 解析与 hunk 应用
 src/apply-patch.ts     apply_patch 工具、fs/sandbox 集成
 src/config.ts          配置、插件工具映射、复杂度分类器
 src/reasoning.ts       推理等级选择与模型能力适配
+src/reasoning-projection.ts 推理等级的会话投影（卡片读取）
 src/context.ts         coding_context 的仓库快照
 src/client/index.ts    Desktop / Web 配置页
 test/                  单元与预设注册测试

@@ -1,12 +1,15 @@
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { ReasoningSummary } from './mode.js'
 import {
   classifyTask,
   higher,
+  levelForEffort,
   mapEffort,
   type CodingOptions,
   type ReasoningChoice,
   type ReasoningLevel,
 } from './config.js'
+import { REASONING_PROJECTION_KEY } from './reasoning-projection.js'
 
 interface AgentState {
   turn: number
@@ -82,6 +85,7 @@ export function turnOf(ctx: any, session: any): number {
 export class ReasoningController {
   private readonly states = new WeakMap<object, AgentState>()
   private readonly overrides = new WeakMap<object, ReasoningLevel>()
+  private readonly userChoices = new WeakMap<object, string>()
   private readonly applied = new WeakMap<object, string>()
   private readonly support = new Map<string, Promise<readonly string[] | null>>()
 
@@ -111,6 +115,41 @@ export class ReasoningController {
 
   private serviceContext(agent: any): { get: (name: string) => any } {
     return { get: (name: string) => this.service(agent, name) }
+  }
+
+  /** Durable reasoning state, folded from the Session log by this preset. */
+  private projectionState(agent: any): { override?: unknown; userEffort?: unknown } | undefined {
+    const session = agent?.session
+    if (session === undefined) return undefined
+    try {
+      const state = this.service(agent, 'sessionProjections')?.stateOf?.(session, REASONING_PROJECTION_KEY)
+      return typeof state === 'object' && state !== null ? state : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Fold the projection back into this controller. A chat-box pick lands as a
+   * `model/selection` event, a `coding_reasoning` call as a tool event, and the
+   * projection is what survives a Host restart.
+   */
+  syncProjection(agent: any): void {
+    const session = agent?.session
+    if (session === undefined) return
+    const state = this.projectionState(agent)
+    if (state === undefined) return
+    const override = state.override
+    if (override === 'low' || override === 'high' || override === 'max') {
+      this.overrides.set(agent, override)
+    } else {
+      this.overrides.delete(agent)
+    }
+    const userEffort = typeof state.userEffort === 'string' && state.userEffort.trim() !== ''
+      ? state.userEffort.trim()
+      : undefined
+    if (userEffort === undefined) this.userChoices.delete(agent)
+    else this.userChoices.set(agent, userEffort)
   }
 
   private selectionFor(agent: any): any {
@@ -173,9 +212,19 @@ export class ReasoningController {
     if (typeof provider !== 'string' || typeof model !== 'string') return undefined
     const efforts = await this.effortsFor(agent, provider, model, signal)
     if (efforts === null) return undefined
-    const effort = mapEffort(choice.level, efforts)
+    const effort = this.resolveEffort(choice, efforts)
     if (effort !== undefined) this.applied.set(agent, effort)
     return effort
+  }
+
+  /**
+   * Prefer the effort the user picked in the chat box, but only while the route
+   * still accepts it; otherwise fall back to the level's closest effort.
+   */
+  private resolveEffort(choice: ReasoningChoice, supported: readonly string[]): string | undefined {
+    const picked = choice.effort
+    if (picked !== undefined && supported.includes(picked)) return picked
+    return mapEffort(choice.level, supported)
   }
 
   private setEffort(agent: any, effort: string | undefined): void {
@@ -224,19 +273,31 @@ export class ReasoningController {
         } satisfies ReasoningChoice
 
     let level = classified.level
+    let effort: string | undefined
     if (mode === 'auto') {
       const previous = this.states.get(agent)
       if (previous !== undefined && previous.turn === turn) level = higher(previous.level, level)
+      const userEffort = this.userChoices.get(agent)
       const override = this.overrides.get(agent)
-      if (override !== undefined) {
+      if (userEffort !== undefined) {
+        // A pick in the chat box is the user's explicit decision for this
+        // session: skip the classifier instead of overwriting it each step.
+        level = levelForEffort(userEffort)
+        effort = userEffort
+        classified.reason = `picked ${userEffort} in the chat box`
+      } else if (override !== undefined) {
         level = override
         classified.reason = `session override (${override})`
       }
     }
 
-    const choice: ReasoningChoice = { ...classified, level }
+    const choice: ReasoningChoice = {
+      ...classified,
+      level,
+      ...(effort === undefined ? {} : { effort }),
+    }
     const supported = await this.supported(agent, signal)
-    if (supported !== null) this.setEffort(agent, mapEffort(level, supported))
+    if (supported !== null) this.setEffort(agent, this.resolveEffort(choice, supported))
     this.states.set(agent, { turn, level, choice })
     return choice
   }
@@ -250,6 +311,8 @@ export class ReasoningController {
   /** Explicit in-session override; `auto` clears it. */
   override(agent: any, value: ReasoningLevel | 'auto'): ReasoningChoice {
     const requested = value === 'low' || value === 'high' || value === 'max' ? value : 'auto'
+    // An explicit tool decision replaces a chat-box pick.
+    this.userChoices.delete(agent)
     const sessionCtx = this.serviceContext(agent)
     const turn = turnOf(sessionCtx, agent.session)
     if (requested === 'auto') {
@@ -282,6 +345,36 @@ export class ReasoningController {
       choice: this.states.get(agent)?.choice,
       effort: this.applied.get(agent) ?? this.currentEffort(agent),
     }
+  }
+
+  /**
+   * Where the level comes from, for the workflow prompt box. The settings pin
+   * wins over an in-session override because it already suppresses the
+   * classifier and the override tool refuses to run. Without an agent the
+   * answer falls back to the settings alone, so the first assembly of a new
+   * session still states whether the level is automatic or pinned.
+   */
+  summary(agent?: any): ReasoningSummary {
+    const mode = this.mode(this.options().reasoning)
+    if (mode !== 'auto') {
+      return { source: 'manual', level: mode, reason: 'pinned by Coding settings' }
+    }
+    if (agent === undefined) return { source: 'auto' }
+    const override = this.overrides.get(agent)
+    if (override !== undefined) {
+      return { source: 'manual', level: override, reason: 'session override' }
+    }
+    const userEffort = this.userChoices.get(agent)
+    if (userEffort !== undefined) {
+      return {
+        source: 'manual',
+        level: levelForEffort(userEffort),
+        reason: `picked ${userEffort} in the chat box`,
+      }
+    }
+    const choice = this.states.get(agent)?.choice
+    if (choice === undefined) return { source: 'auto' }
+    return { source: 'auto', level: choice.level, reason: choice.reason }
   }
 
   /** Explain why an automatic decision could not reach the request selector. */

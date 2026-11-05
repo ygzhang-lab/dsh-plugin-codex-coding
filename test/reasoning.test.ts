@@ -10,7 +10,7 @@ function user(text: string) {
   }
 }
 
-function makeContext(efforts: string[]) {
+function makeContext(efforts: string[], reasoningState?: unknown) {
   const selection: { current: any; assembled?: any } = {
     current: { provider: 'deepseek', model: 'deepseek-chat' },
   }
@@ -26,7 +26,11 @@ function makeContext(efforts: string[]) {
       }
       if (name === 'sessionProjections') {
         return {
-          stateOf: (_session: unknown, key: string) => key === 'turnBoundary' ? { lastTurn: 1 } : null,
+          stateOf: (_session: unknown, key: string) => {
+            if (key === 'turnBoundary') return { lastTurn: 1 }
+            if (key === 'codingReasoning') return reasoningState ?? null
+            return null
+          },
         }
       }
       return undefined
@@ -284,6 +288,171 @@ describe('ReasoningController', () => {
     await controller.apply(agent)
     expect(calls).toBe(2)
     expect(selection.current.reasoningEffort).toBe('high')
+  })
+})
+
+describe('prompt-visible summary', () => {
+  it('reports a settings pin as manual before any turn runs', () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'max', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    expect(controller.summary(agent)).toEqual({
+      source: 'manual',
+      level: 'max',
+      reason: 'pinned by Coding settings',
+    })
+  })
+
+  it('reports auto with no level before the first classification', () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    expect(controller.summary(agent)).toEqual({ source: 'auto' })
+  })
+
+  it('answers from the settings alone before an agent is bound', () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    expect(controller.summary()).toEqual({ source: 'auto' })
+    options.reasoning = 'high'
+    expect(controller.summary()).toEqual({
+      source: 'manual',
+      level: 'high',
+      reason: 'pinned by Coding settings',
+    })
+  })
+
+  it('reports the classified level and its basis after a step', async () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = {
+      session: { deriveMessages: () => [user('Update src/a.ts and src/b.ts to share the mapper')] },
+    }
+    await controller.apply(agent)
+    expect(controller.summary(agent)).toEqual({
+      source: 'auto',
+      level: 'high',
+      reason: '2 repository files referenced',
+    })
+  })
+
+  it('reports a session override as manual', () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    controller.override(agent, 'high')
+    expect(controller.summary(agent)).toEqual({
+      source: 'manual',
+      level: 'high',
+      reason: 'session override',
+    })
+    controller.override(agent, 'auto')
+    expect(controller.summary(agent).source).toBe('auto')
+  })
+
+  it('prefers the settings pin over a stale session override', () => {
+    const { ctx } = makeContext(['low', 'high', 'max'])
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const agent = { session: { deriveMessages: () => [] } }
+    const controller = new ReasoningController(ctx, () => options)
+    controller.override(agent, 'high')
+    options.reasoning = 'low'
+    expect(controller.summary(agent)).toEqual({
+      source: 'manual',
+      level: 'low',
+      reason: 'pinned by Coding settings',
+    })
+  })
+
+  it('honours the effort picked in the chat box instead of classifying', async () => {
+    const { ctx, selection } = makeContext(
+      ['low', 'medium', 'high'],
+      { override: null, userEffort: 'medium', effort: null, active: true },
+    )
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = {
+      session: { deriveMessages: () => [user('Update src/a.ts and src/b.ts to share the mapper')] },
+    }
+    controller.syncProjection(agent)
+    const choice = await controller.apply(agent)
+    // The classifier would have said high for a multi-file request.
+    expect(choice?.level).toBe('high')
+    expect(choice?.effort).toBe('medium')
+    expect(choice?.reason).toBe('picked medium in the chat box')
+    expect(selection.current.reasoningEffort).toBe('medium')
+    expect(controller.summary(agent)).toEqual({
+      source: 'manual',
+      level: 'high',
+      reason: 'picked medium in the chat box',
+    })
+  })
+
+  it('keeps a low chat-box pick even when the request looks multi-file', async () => {
+    const { ctx, selection } = makeContext(
+      ['low', 'high', 'max'],
+      { override: null, userEffort: 'low', effort: null, active: true },
+    )
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = {
+      session: { deriveMessages: () => [user('Update src/a.ts and src/b.ts to share the mapper')] },
+    }
+    controller.syncProjection(agent)
+    const choice = await controller.apply(agent)
+    expect(choice?.level).toBe('low')
+    expect(selection.current.reasoningEffort).toBe('low')
+  })
+
+  it('falls back to the level when the route rejects the picked effort', async () => {
+    const { ctx, selection } = makeContext(
+      ['low', 'high'],
+      { override: null, userEffort: 'xhigh', effort: null, active: true },
+    )
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    controller.syncProjection(agent)
+    const choice = await controller.apply(agent)
+    expect(choice?.level).toBe('max')
+    expect(selection.current.reasoningEffort).toBe('high')
+  })
+
+  it('reads an explicit tool override from the projection', async () => {
+    const { ctx, selection } = makeContext(
+      ['low', 'high', 'max'],
+      { override: 'max', userEffort: null, effort: null, active: true },
+    )
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    controller.syncProjection(agent)
+    const choice = await controller.apply(agent)
+    expect(choice?.level).toBe('max')
+    expect(selection.current.reasoningEffort).toBe('max')
+    expect(controller.summary(agent).reason).toBe('session override')
+  })
+
+  it('drops a chat-box pick when the user pins the level through the tool', async () => {
+    const { ctx } = makeContext(
+      ['low', 'high', 'max'],
+      { override: null, userEffort: 'low', effort: null, active: true },
+    )
+    const options: CodingOptions = { reasoning: 'auto', localSkills: true, disabledPlugins: [] }
+    const controller = new ReasoningController(ctx, () => options)
+    const agent = { session: { deriveMessages: () => [] } }
+    controller.syncProjection(agent)
+    controller.override(agent, 'high')
+    expect(controller.summary(agent)).toEqual({
+      source: 'manual',
+      level: 'high',
+      reason: 'session override',
+    })
   })
 })
 

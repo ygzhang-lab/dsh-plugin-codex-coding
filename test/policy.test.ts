@@ -171,17 +171,23 @@ describe('normalizeOptions', () => {
     expect(normalizeOptions(undefined)).toEqual({
       reasoning: 'auto',
       localSkills: true,
+      language: 'auto',
       disabledPlugins: [],
     })
     expect(normalizeOptions({
       reasoning: 'max',
       localSkills: false,
       disabledPlugins: ['a', 'a', 1 as unknown as string],
-    })).toEqual({ reasoning: 'max', localSkills: false, disabledPlugins: ['a'] })
+    })).toEqual({ reasoning: 'max', localSkills: false, language: 'auto', disabledPlugins: ['a'] })
   })
 
   it('falls back to auto for an invalid reasoning value', () => {
     expect(normalizeOptions({ reasoning: 'ultra' as never }).reasoning).toBe('auto')
+  })
+
+  it('keeps only the shipped language values', () => {
+    expect(normalizeOptions({ language: 'zh' }).language).toBe('zh')
+    expect(normalizeOptions({ language: 'ja' as never }).language).toBe('auto')
   })
 
   it('never lets a stored config disable a core plugin', () => {

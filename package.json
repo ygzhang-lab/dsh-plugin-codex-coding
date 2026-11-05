@@ -1,7 +1,7 @@
 {
-  "name": "dsh-plugin-coding",
-  "version": "0.2.1",
-  "description": "DSH Codex 风格 Coding 插件：交付契约、Consult/Review/Code 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。Codex-style coding preset for DeepSeek Harness with consultation/review/code modes, a delivery contract, apply_patch editing, and adaptive reasoning.",
+  "name": "dsh-plugin-codex-coding",
+  "version": "0.2.1-rc.2",
+  "description": "DSH Codex 风格的 Coding 插件：交付契约、Consult/Review/Codex 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。Codex-style coding preset for DeepSeek Harness with consultation/review/code modes, a delivery contract, apply_patch editing, and adaptive reasoning.",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -38,6 +38,7 @@
       "platform": "web",
       "immediately": true,
       "inject": [
+        "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-plugin-manager"
@@ -55,18 +56,18 @@
     "dsh",
     "dsh-plugin",
     "dsh-preset",
-    "coding",
-    "codex"
+    "dsh-coding",
+    "dsh-codex"
   ],
   "author": "ygzhang",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ygzhang-lab/dsh-plugin-coding.git"
+    "url": "git+https://github.com/ygzhang-lab/dsh-plugin-codex-coding.git"
   },
-  "homepage": "https://github.com/ygzhang-lab/dsh-plugin-coding#readme",
+  "homepage": "https://github.com/ygzhang-lab/dsh-plugin-codex-coding#readme",
   "bugs": {
-    "url": "https://github.com/ygzhang-lab/dsh-plugin-coding/issues"
+    "url": "https://github.com/ygzhang-lab/dsh-plugin-codex-coding/issues"
   },
   "publishConfig": {
     "access": "public"

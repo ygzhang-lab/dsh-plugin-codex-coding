@@ -7,15 +7,18 @@ import {
 } from './config.js'
 import { ReasoningController } from './reasoning.js'
 import { CODING_CONTRACT } from './prompt.js'
+import { languagePrompt, resolveHostLanguage } from './language.js'
 import {
   ModeController,
   WORKFLOW_PROJECTION_KEY,
   describeMode,
   parseWorkflowMode,
   workflowPrompt,
+  type ReasoningSummary,
   type WorkflowMode,
 } from './mode.js'
 import { workflowProjection } from './workflow.js'
+import { reasoningProjection } from './reasoning-projection.js'
 
 interface CodingService {
   options: CodingOptions
@@ -24,7 +27,7 @@ interface CodingService {
 function serviceOf(ctx: any): CodingService {
   const service = ctx.get('dshCoding')
   if (service === undefined) {
-    throw new Error('dsh-plugin-coding: the coding settings service is unavailable; enable the dsh-plugin-coding bundle')
+    throw new Error('dsh-plugin-codex-coding: the coding settings service is unavailable; enable the dsh-plugin-codex-coding bundle')
   }
   return service
 }
@@ -50,7 +53,7 @@ function restrictAgent(agent: any, options: CodingOptions): void {
   } catch (error) {
     // A tool may have been unmounted by another composition layer. Keep the
     // session usable and make an unexpected restriction failure visible.
-    agent.ctx.logger?.warn?.(`dsh-plugin-coding: could not restrict tools: ${String(error)}`)
+    agent.ctx.logger?.warn?.(`dsh-plugin-codex-coding: could not restrict tools: ${String(error)}`)
   }
 }
 
@@ -62,7 +65,11 @@ function helpText(value: string): string {
  * Register the Codex operating contract as its own early prompt section. The
  * persona stays an identity, and the workflow has one source of truth.
  */
-function registerContract(ctx: any, currentMode: () => WorkflowMode): void {
+function registerContract(
+  ctx: any,
+  currentMode: () => WorkflowMode,
+  currentReasoning: () => ReasoningSummary,
+): void {
   const prompt = ctx.get?.('systemPrompt') ?? ctx.systemPrompt
   if (typeof prompt?.section !== 'function') return
   prompt.section({
@@ -77,11 +84,34 @@ function registerContract(ctx: any, currentMode: () => WorkflowMode): void {
       prompt.context({
         name: 'coding:workflow',
         order: 15,
-        text: () => workflowPrompt(currentMode()),
+        text: () => workflowPrompt(currentMode(), currentReasoning()),
       })
     } catch (error) {
-      ctx.logger?.warn?.(`dsh-plugin-coding: could not register the workflow prompt context: ${String(error)}`)
+      ctx.logger?.warn?.(`dsh-plugin-codex-coding: could not register the workflow prompt context: ${String(error)}`)
     }
+  }
+}
+
+/**
+ * Fix the conversation language for every request. Resolution is deferred to
+ * assembly time so a settings change or a DSH language switch reaches the
+ * next model call; `auto` reads the interface preference from the running
+ * composition and falls back to the host locale.
+ */
+function registerLanguage(ctx: any, service: CodingService): void {
+  const prompt = ctx.get?.('systemPrompt') ?? ctx.systemPrompt
+  if (typeof prompt?.context !== 'function') return
+  try {
+    prompt.context({
+      name: 'coding:language',
+      order: 12,
+      text: () => languagePrompt(resolveHostLanguage({
+        mode: service.options.language,
+        loader: ctx.get?.('loader') ?? ctx.loader,
+      })),
+    })
+  } catch (error) {
+    ctx.logger?.warn?.(`dsh-plugin-codex-coding: could not register the language prompt context: ${String(error)}`)
   }
 }
 
@@ -101,7 +131,7 @@ function registerPatch(ctx: any, service: CodingService): void {
  * preset, never by the Host, so a session that does not select Coding is
  * completely unaffected.
  */
-export const name = 'dsh-plugin-coding-preset'
+export const name = 'dsh-plugin-codex-coding-preset'
 export const inject = ['tools', 'dshCoding', 'systemPrompt', 'sessionController', 'llm', 'sessionProjections', 'commands']
 
 export function apply(ctx: any): void {
@@ -111,11 +141,21 @@ export function apply(ctx: any): void {
   // Prompt-visible mirror of the current session mode. The preset is mounted
   // per Agent, so this closure belongs to exactly one session.
   let promptMode: WorkflowMode = 'auto'
+  // The reasoning level lives in the controller; the prompt only needs the
+  // agent whose session it belongs to, and events and tools supply that agent.
+  // Until one arrives the controller reports the settings alone.
+  let promptAgent: any
+  const remember = (agent: any): void => {
+    if (agent !== undefined && agent !== null) promptAgent = agent
+  }
+  const currentReasoning = (): ReasoningSummary => reasoning.summary(promptAgent)
   const setMode = (agent: any, mode: WorkflowMode): WorkflowMode => {
+    remember(agent)
     promptMode = mode
     return modes.set(agent, mode)
   }
-  registerContract(ctx, () => promptMode)
+  registerContract(ctx, () => promptMode, currentReasoning)
+  registerLanguage(ctx, service)
 
   // The conversation card reads this projection; registration failures must
   // not take the preset down, so they degrade to a warning.
@@ -124,7 +164,12 @@ export function apply(ctx: any): void {
     try {
       projectionService.register(workflowProjection)
     } catch (error) {
-      ctx.logger?.warn?.(`dsh-plugin-coding: could not register the workflow projection: ${String(error)}`)
+      ctx.logger?.warn?.(`dsh-plugin-codex-coding: could not register the workflow projection: ${String(error)}`)
+    }
+    try {
+      projectionService.register(reasoningProjection)
+    } catch (error) {
+      ctx.logger?.warn?.(`dsh-plugin-codex-coding: could not register the reasoning projection: ${String(error)}`)
     }
   }
 
@@ -134,7 +179,7 @@ export function apply(ctx: any): void {
     if (typeof service?.register !== 'function') return
     service.register({
       name: 'workflow',
-      description: 'Show or set this session\'s Coding workflow mode: auto | consult | review | code.',
+      description: 'Show or set this session\'s workflow mode: auto | consult (Q&A) | review | code (Codex Coding).',
       input: { hint: 'auto | consult | review | code' },
       handler: ({ agent, rawInput }: { agent: any; rawInput?: string }) => {
         const text = typeof rawInput === 'string' ? rawInput.trim() : ''
@@ -163,6 +208,7 @@ export function apply(ctx: any): void {
   }
 
   ctx.on('agent/created', ({ agent }: { agent: any }) => {
+    remember(agent)
     restrictAgent(agent, service.options)
   })
 
@@ -172,15 +218,25 @@ export function apply(ctx: any): void {
   ctx.on('agent/pre-step', async (context: any, next: () => Promise<any>) => {
     const decision = await next()
     if (decision?.kind === 'reject' || context.signal?.aborted === true) return decision
+    remember(context.agent)
     try {
       // The projection is the durable copy of the mode: it survives a Host
       // restart and overwrites the in-memory mirror when the log moved on.
+      // The card's activation needs no marker from here: it is folded from the
+      // Host's own events, so this preset never writes a custom event type.
       const session = context.agent?.session
       const projected = projectionService?.stateOf?.(session, WORKFLOW_PROJECTION_KEY)
       const projectedMode = parseWorkflowMode(projected?.mode)
       if (projectedMode !== undefined) setMode(context.agent, projectedMode)
     } catch {
       // A missing projection keeps the in-memory mode.
+    }
+    try {
+      // The chat box records a pick as `model/selection`; the projection is
+      // the durable copy, so fold it back before classifying this step.
+      reasoning.syncProjection(context.agent)
+    } catch {
+      // A missing reasoning projection keeps the in-memory choice.
     }
     try {
       await reasoning.apply(context.agent, context.signal, decision?.messages)
@@ -225,6 +281,7 @@ export function apply(ctx: any): void {
     },
     async execute(args: { detail?: 'brief' | 'full' }, exec: any): Promise<string> {
       if (exec.agent === undefined) throw new Error('coding_context requires an owning agent session')
+      remember(exec.agent)
       let cwd = process.cwd()
       try {
         const workingDirectory = exec.agent.ctx?.get?.('workingDirectory') ?? ctx.get('workingDirectory')
@@ -268,6 +325,7 @@ export function apply(ctx: any): void {
     },
     async execute(args: { effort?: 'auto' | 'low' | 'high' | 'max' }, exec: any): Promise<string> {
       if (exec.agent === undefined) throw new Error('coding_reasoning requires an owning agent session')
+      remember(exec.agent)
       const options = service.options
       if (args?.effort === undefined) {
         const state = reasoning.describe(exec.agent)
@@ -300,7 +358,7 @@ export function apply(ctx: any): void {
     name: 'coding_mode',
     description: [
       'Inspect or set the workflow mode for this session.',
-      'Use consult for questions, advice, plans, and decisions; review for read-only findings; code for implementation.',
+      'Use consult (Q&A) for questions, advice, plans, and decisions; review for read-only findings; code (Codex Coding) for implementation.',
       'Call with no mode to inspect, or pass auto to clear a manual override.',
       'This changes workflow only; use coding_reasoning for effort.',
       'Call only when the user asks to switch modes or asks which mode is active; never force a mode on your own.',
@@ -329,7 +387,7 @@ export function apply(ctx: any): void {
       }
       const next = setMode(exec.agent, args.mode)
       return next === 'auto'
-        ? 'workflow mode override cleared; auto-select Consult, Review, or Code from the request.'
+        ? 'workflow mode override cleared; auto-select Q&A, Review, or Codex Coding from the request.'
         : modes.describe(next)
     },
   }))

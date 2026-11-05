@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { PLUGIN_CATALOG } from '../src/config.js'
+import { CODING_PRESET_ID } from '../src/workflow.js'
 
 const root = dirname(fileURLToPath(new URL('.', import.meta.url)))
 
@@ -25,7 +26,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 describe('published bundle', () => {
   it('declares the bundle patch and every runtime export', async () => {
     const manifest = JSON.parse(await text('package.json'))
-    expect(manifest.name).toBe('dsh-plugin-coding')
+    expect(manifest.name).toBe('dsh-plugin-codex-coding')
     expect(manifest.private).not.toBe(true)
     expect(manifest.dsh.bundle.patch).toBe('./cordis.patch.yml')
     expect(manifest.dsh.client.platform).toBe('web')
@@ -76,32 +77,35 @@ describe('published bundle', () => {
 
     const host = rows[0].insert[0]
     expect(host).toMatchObject({
-      id: 'dsh-plugin-coding',
-      name: 'dsh-plugin-coding',
-      config: { reasoning: 'auto', localSkills: true, disabledPlugins: [] },
+      id: 'dsh-plugin-codex-coding',
+      name: 'dsh-plugin-codex-coding',
+      config: { reasoning: 'auto', localSkills: true, language: 'auto', disabledPlugins: [] },
     })
 
     const preset = rows[0].insert[1]
-    expect(preset.id).toBe('preset-coding')
-    expect(preset.config.id).toBe('coding')
-    expect(preset.config.name).toBe('Coding 模式')
+    expect(preset.id).toBe('preset-codex-coding')
+    // The conversation card only shows in sessions whose header names this
+    // preset id, so the shipped row and the compiled constant must agree.
+    expect(preset.config.id).toBe(CODING_PRESET_ID)
+    expect(preset.config.name).toBe('Codex Coding')
     expect(preset.config.description).toContain('DSH Codex 风格 Coding 插件')
     expect(preset.config.description).toContain('A Codex-style coding agent for DSH')
-    expect(preset.config.plugins.some((row: any) => row.name === 'dsh-plugin-coding/preset')).toBe(true)
+    expect(preset.config.plugins.some((row: any) => row.name === 'dsh-plugin-codex-coding/preset')).toBe(true)
     expect(preset.config.plugins.some((row: any) => row.name === '@deepseek-ai/dsh-skill')).toBe(false)
   })
 
   it('keeps the settings catalog aligned with the mounted plugin rows', async () => {
     const patch = await text('cordis.patch.yml')
     for (const plugin of PLUGIN_CATALOG) {
-      expect(patch).toContain(`name: '${plugin.module}'`)
+      // Quote style is formatting, not contract; accept both single and double.
+      expect(patch).toMatch(new RegExp(`name: ['"]${plugin.module.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`))
     }
   })
 
   it('ships valid display metadata and an icon', async () => {
     for (const locale of ['en', 'zh']) {
       const value = JSON.parse(await text(`locale/${locale}.json`))
-      expect(value.meta.title).toBe('DSH Coding')
+      expect(value.meta.title).toBe('DSH Codex Coding')
       expect(value.meta.description).toContain('Codex')
       expect(value.meta.description).toContain('Coding')
       expect(value.meta.description.length).toBeGreaterThan(10)
