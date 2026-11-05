@@ -85,6 +85,11 @@ const en = {
   reasoningSourceAuto: "automatic",
   reasoningSourceOverride: "session override",
   reasoningSourceSettings: "pinned by settings",
+  reasoningAutoButton: "Auto",
+  reasoningAutoButtonHint:
+    "Hand this session's reasoning level back to the automatic policy.",
+  reasoningAutoFailed:
+    "The reasoning level was not reset to automatic. Try again.",
 };
 
 const zh: typeof en = {
@@ -143,6 +148,9 @@ const zh: typeof en = {
   reasoningSourceAuto: "自动",
   reasoningSourceOverride: "会话覆盖",
   reasoningSourceSettings: "设置固定",
+  reasoningAutoButton: "自动",
+  reasoningAutoButtonHint: "把本会话的推理等级交还给插件自动选择。",
+  reasoningAutoFailed: "推理等级未切回自动，请重试。",
 };
 
 const styles = {
@@ -287,6 +295,12 @@ const CARD_CSS = [
   '.dsh-coding-card-button[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-state-business-primary)}',
   ".dsh-coding-card-button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}",
   ".dsh-coding-card-button:disabled{opacity:.6;cursor:default}",
+  // Same type as the row it sits in, so baseline alignment (the row uses
+  // `align-items:baseline`) lines the link up with the level text.
+  ".dsh-coding-card-link{font:inherit;font-size:12px;line-height:18px;color:var(--dsw-alias-state-business-primary);text-decoration:underline;text-underline-offset:2px;cursor:pointer}",
+  ".dsh-coding-card-link:hover{color:var(--dsw-alias-label-primary)}",
+  '.dsh-coding-card-link[aria-disabled="true"]{opacity:.6;cursor:default;pointer-events:none}',
+  ".dsh-coding-card-link:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:2px}",
 ].join("");
 
 /**
@@ -336,6 +350,7 @@ interface ReasoningStateView {
   userEffort?: string | null;
   effort?: string | null;
   active?: boolean;
+  running?: boolean;
   latest?: number;
   turns?: ReasoningTurnView[];
 }
@@ -420,22 +435,37 @@ export function WorkflowModeCard(props: any): any {
     | ReasoningStateView
     | undefined;
   const [busy, setBusy] = useState<WorkflowMode | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const t = props.t as (key: keyof typeof en) => string;
   // The projection key is registered process-wide, so every session publishes
   // a value; `active` is what limits the card to this preset's sessions. A
   // value without `active` comes from an older Host and still renders.
-  const turn = typeof props.turn === "number" ? props.turn : undefined;
+  // The slot's owner prop is a `TurnLocation` (`{ kind, turn }`), not a number:
+  // reading it as one made every card look turnless, which froze all of them
+  // and dropped their per-turn reasoning row. A plain number is still accepted
+  // so a direct render (tests, an older Host) keeps working.
+  const owner = props.turn as
+    | number
+    | { turn?: unknown }
+    | undefined;
+  const turn =
+    typeof owner === "number"
+      ? owner
+      : typeof owner?.turn === "number"
+        ? owner.turn
+        : undefined;
   const turns = Array.isArray(state?.turns) ? state.turns : [];
   const record =
     turn === undefined ? undefined : turns.find((item) => item.turn === turn);
-  // Without a known turn (an older Host) the card keeps its original
-  // behaviour and stays a control.
+  // A card is a control only when the projection names it as the newest closed
+  // turn. The tail is published on `turn/end`, so while a turn runs the card on
+  // screen is still the newest one and has to stay switchable. Never fall back
+  // to the live mode without that name: that is what let every historical card
+  // follow a switch.
   const latest =
-    typeof state?.latest === "number"
-      ? state.latest
-      : (turns.at(-1)?.turn ?? 0);
-  const live = turn === undefined || turn >= latest;
+    typeof state?.latest === "number" ? state.latest : undefined;
+  const live = turn !== undefined && latest !== undefined && turn === latest;
   const mode = live ? state?.mode : (record?.mode ?? state?.mode);
   if (mode === undefined || state?.active === false) return null;
 
@@ -443,13 +473,18 @@ export function WorkflowModeCard(props: any): any {
     mode === "auto"
       ? t("workflowAutoStatus")
       : `${t(modeLabelKey(mode))} — ${t("workflowManualStatus")}`;
-  const reasoning = live
-    ? reasoningDisplay(reasoningState, props.settings?.())
-    : reasoningTurnDisplay(
-        turn === undefined
-          ? undefined
-          : reasoningState?.turns?.find((item) => item.turn === turn),
-      );
+  const turnReasoning =
+    turn === undefined
+      ? undefined
+      : reasoningState?.turns?.find((item) => item.turn === turn);
+  // The live card reads the current row; a frozen card keeps its own snapshot.
+  // A snapshot that has not landed yet (the tail is published the moment
+  // `turn/end` arrives) falls back to the current row instead of dropping the
+  // line, so a card never renders without its reasoning level.
+  const reasoning =
+    live || turnReasoning === undefined
+      ? reasoningDisplay(reasoningState, props.settings?.())
+      : reasoningTurnDisplay(turnReasoning);
   const reasoningLevel =
     reasoning === null
       ? ""
@@ -466,6 +501,12 @@ export function WorkflowModeCard(props: any): any {
               ? "reasoningSourceOverride"
               : "reasoningSourceAuto",
         );
+  // Only the newest card can hand control back; every older card is history.
+  // The projection still distinguishes this clear from the preset's own
+  // automatic writes, so it works while a turn runs as well.
+  const canReset =
+    live &&
+    reasoning?.source === "override";
 
   async function choose(next: WorkflowMode): Promise<void> {
     if (busy !== null || !live) return;
@@ -482,15 +523,23 @@ export function WorkflowModeCard(props: any): any {
     }
   }
 
+  async function resetReasoning(): Promise<void> {
+    if (resetting || !canReset) return;
+    setResetting(true);
+    setError(null);
+    try {
+      const result = await props.resetReasoning?.();
+      if (result !== true) setError(t("reasoningAutoFailed"));
+    } catch {
+      setError(t("reasoningAutoFailed"));
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return h(
     "div",
-    { className: "dsh-coding-card" },
-    h(
-      "div",
-      { className: "dsh-coding-card-row" },
-      h("span", { className: "dsh-coding-card-title" }, t("workflowTitle")),
-      h("span", { className: "dsh-coding-card-status" }, status),
-    ),
+    { className: "dsh-coding-card", "data-live": live ? "true" : "false" },
     reasoning === null
       ? null
       : h(
@@ -506,7 +555,37 @@ export function WorkflowModeCard(props: any): any {
             { className: "dsh-coding-card-status" },
             `${reasoningLevel} · ${reasoningSource}`,
           ),
+          canReset
+            ? h(
+                "a",
+                {
+                  className: "dsh-coding-card-link",
+                  role: "button",
+                  tabIndex: 0,
+                  "aria-disabled": resetting ? "true" : undefined,
+                  title: t("reasoningAutoButtonHint"),
+                  onClick: () => {
+                    void resetReasoning();
+                  },
+                  onKeyDown: (event: {
+                    key: string;
+                    preventDefault: () => void;
+                  }) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    void resetReasoning();
+                  },
+                },
+                resetting ? t("saving") : t("reasoningAutoButton"),
+              )
+            : null,
         ),
+    h(
+      "div",
+      { className: "dsh-coding-card-row" },
+      h("span", { className: "dsh-coding-card-title" }, t("workflowTitle")),
+      h("span", { className: "dsh-coding-card-status" }, status),
+    ),
     h(
       "div",
       { className: "dsh-coding-card-actions" },
@@ -879,6 +958,26 @@ export function apply(ctx: any): void {
         const remote = ctx.remote?.commands;
         if (typeof remote?.execute !== "function") return undefined;
         return remote.execute(props.sessionId, line, []);
+      },
+      // The chat box records a pick as a `model/selection` event that carries
+      // an effort. Selecting the same route again without an effort appends a
+      // fresh event with none, which the Coding projection folds back to
+      // "automatic" and the preset then classifies on its own.
+      resetReasoning: async () => {
+        try {
+          const directories = ctx.get?.("modelDirectories");
+          if (typeof directories?.directoryFor !== "function") return false;
+          const directory = directories.directoryFor(props.sessionId);
+          const current = directory?.store?.getSnapshot?.()?.current;
+          if (current === null || current === undefined) return false;
+          const result = await directory.select({
+            provider: current.provider,
+            model: current.model,
+          });
+          return result?.ok === true;
+        } catch {
+          return false;
+        }
       },
     });
   // Per-turn card in the conversation. The preset registers the projection, so
