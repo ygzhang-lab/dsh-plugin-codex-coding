@@ -5,7 +5,9 @@
  *
  * DSH keeps the interface preference inside the locale plugin's entry config,
  * so the Host reads it from the running composition instead of guessing from
- * the browser. When that entry is absent the host locale decides.
+ * the browser. When nothing stored a preference, the operating system's
+ * language list decides — the same source the desktop window uses — and only
+ * then the host locale.
  */
 export type PromptLanguage = 'zh' | 'en'
 export type LanguageMode = 'auto' | PromptLanguage
@@ -18,15 +20,43 @@ export function normalizeLanguageMode(value: unknown): LanguageMode {
   return value === 'zh' || value === 'en' || value === 'auto' ? value : 'auto'
 }
 
+/** Lowercased primary language tag, ignoring the codeset and `@modifier`. */
+function primaryTag(tag: unknown): string {
+  if (typeof tag !== 'string') return ''
+  return tag.trim().toLowerCase().replace(/_/g, '-').split('.')[0] ?? ''
+}
+
 /**
  * Map one BCP 47-style tag (or a POSIX `LANG` value) onto a shipped language.
  * Chinese is the only match that selects Chinese; every other tag is English.
  */
 export function languageOf(tag: unknown): PromptLanguage {
-  if (typeof tag !== 'string') return 'en'
-  const normalized = tag.trim().toLowerCase().replace(/_/g, '-').split('.')[0] ?? ''
+  const normalized = primaryTag(tag)
   if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh'
   return 'en'
+}
+
+/**
+ * The shipped language of one tag, or `undefined` when this package ships
+ * neither. A desktop language list is consulted in order, so an unsupported
+ * entry (`ja-JP`) must be skipped rather than folded into English.
+ */
+function shippedLanguageOf(tag: unknown): PromptLanguage | undefined {
+  const normalized = primaryTag(tag)
+  if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh'
+  if (normalized === 'en' || normalized.startsWith('en-')) return 'en'
+  return undefined
+}
+
+/**
+ * A POSIX locale that states no language preference at all. `C.UTF-8` is a
+ * codeset variant of `C`, and it is the value a macOS login shell commonly
+ * exports — treating it as "English" is what made a Chinese desktop answer in
+ * English.
+ */
+export function isNeutralLocale(value: string): boolean {
+  const base = primaryTag(value)
+  return base === '' || base === 'c' || base === 'posix'
 }
 
 /**
@@ -58,7 +88,7 @@ export function hostLocaleOf(env: Record<string, string | undefined> = process.e
     const value = env[name]
     if (typeof value !== 'string') continue
     const trimmed = value.trim()
-    if (trimmed === '' || trimmed === 'C' || trimmed === 'POSIX') continue
+    if (isNeutralLocale(trimmed)) continue
     return trimmed
   }
   try {
@@ -75,6 +105,26 @@ export interface LanguageInputs {
   loader?: any
   /** Test seam for the host locale; defaults to POSIX variables and the OS. */
   locale?: string
+  /**
+   * The operating system's preferred languages, in order. The Host runs with
+   * the login-shell environment, so on a macOS desktop the POSIX variables are
+   * usually neutral while the window itself follows the system language.
+   * Passing a thunk keeps the probe from running when the language is pinned.
+   */
+  systemLanguages?: readonly string[] | (() => readonly string[])
+}
+
+/** Read the OS language list, tolerating a thunk that throws. */
+function readSystemLanguages(input: LanguageInputs['systemLanguages']): readonly string[] {
+  if (typeof input === 'function') {
+    try {
+      const value = input()
+      return Array.isArray(value) ? value : []
+    } catch {
+      return []
+    }
+  }
+  return Array.isArray(input) ? input : []
 }
 
 /** Resolve the language used by prompts, tool text, and todo items. */
@@ -83,7 +133,13 @@ export function resolveHostLanguage(inputs: LanguageInputs = {}): PromptLanguage
   if (mode !== 'auto') return mode
   const preference = localePreferenceOf(inputs.loader)
   if (preference !== undefined) return languageOf(preference)
-  return languageOf(inputs.locale ?? hostLocaleOf())
+  // The desktop decides its own interface language from this list, and the
+  // POSIX variables it inherits from a login shell carry no language at all.
+  for (const tag of readSystemLanguages(inputs.systemLanguages)) {
+    const language = shippedLanguageOf(tag)
+    if (language !== undefined) return language
+  }
+  return languageOf(inputs.locale !== undefined ? inputs.locale : hostLocaleOf())
 }
 
 /** Prompt section that fixes the conversation language for the session. */

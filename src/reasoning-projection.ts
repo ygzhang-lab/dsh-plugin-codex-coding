@@ -19,6 +19,14 @@ import {
 
 export const REASONING_PROJECTION_KEY = 'codingReasoning'
 
+/** The reasoning state one completed turn ran under, for its own card. */
+export interface ReasoningTurn {
+  turn: number
+  override: ReasoningLevel | null
+  userEffort: string | null
+  effort: string | null
+}
+
 export interface ReasoningProjectionState {
   /** Level pinned for this session by `coding_reasoning`; null when automatic. */
   override: ReasoningLevel | null
@@ -32,15 +40,36 @@ export interface ReasoningProjectionState {
   effort: string | null
   /** True only for sessions created by this bundle's Coding preset. */
   active: boolean
+  /** Highest turn the log has reached; its card reads the live state. */
+  latest: number
+  /** Reasoning state as of each completed turn, oldest first. */
+  turns: ReasoningTurn[]
 }
 
 const levelSchema = z.enum(['low', 'high', 'max'])
+const turnSchema = z.object({
+  turn: z.number(),
+  override: levelSchema.nullable(),
+  userEffort: z.string().nullable(),
+  effort: z.string().nullable(),
+}).strict()
 const stateSchema = z.object({
   override: levelSchema.nullable(),
   userEffort: z.string().nullable(),
   effort: z.string().nullable(),
   active: z.boolean(),
+  latest: z.number(),
+  turns: z.array(turnSchema),
 }).strict()
+
+/** Bound the history the state carries; older cards fall back to the live row. */
+const MAX_TURNS = 100
+
+/** Numeric `turn/start` and `turn/end` payloads; anything else is ignored. */
+function eventTurn(event: unknown): number | undefined {
+  const value = (event as { data?: { turn?: unknown } })?.data?.turn
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
 
 /** Read a session override from a `coding_reasoning` tool call's JSON arguments. */
 export function overrideFromToolArguments(
@@ -85,15 +114,17 @@ function effortFromSelection(event: unknown): string | null | undefined {
 
 export const reasoningProjection = {
   key: REASONING_PROJECTION_KEY,
-  // `userEffort` joined the state, so cached checkpoints from the previous
-  // shape must be discarded.
-  stateVersion: 2,
+  // `turns` and `latest` joined the state, so cached checkpoints from the
+  // previous shape must be discarded.
+  stateVersion: 3,
   stateSchema,
   init: (header?: PresetHeader): ReasoningProjectionState => ({
     override: null,
     userEffort: null,
     effort: null,
     active: isActiveSession(header),
+    latest: 0,
+    turns: [],
   }),
   apply: (state: ReasoningProjectionState, event: unknown): ReasoningProjectionState => {
     const value = event as {
@@ -118,6 +149,18 @@ export const reasoningProjection = {
     const effort = effortFromHeader(event)
     if (effort !== undefined) {
       return effort === state.effort ? state : { ...state, effort }
+    }
+    // Snapshot the reasoning state when a turn closes: its card must keep the
+    // level that turn actually used, while later turns move on.
+    const turn = eventTurn(event)
+    if (turn !== undefined && (value.type === 'turn/start' || value.type === 'turn/end')) {
+      const latest = Math.max(state.latest, turn)
+      if (value.type === 'turn/start') {
+        return latest === state.latest ? state : { ...state, latest }
+      }
+      const turns = state.turns.filter((item) => item.turn !== turn)
+      turns.push({ turn, override: state.override, userEffort: state.userEffort, effort: state.effort })
+      return { ...state, latest, turns: turns.slice(-MAX_TURNS) }
     }
     const active = activationFromEvent(event)
     if (active === undefined || active === state.active) return state

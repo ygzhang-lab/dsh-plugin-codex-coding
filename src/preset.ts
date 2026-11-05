@@ -8,6 +8,7 @@ import {
 import { ReasoningController } from './reasoning.js'
 import { CODING_CONTRACT } from './prompt.js'
 import { languagePrompt, resolveHostLanguage } from './language.js'
+import { systemLanguages } from './system-language.js'
 import {
   ModeController,
   WORKFLOW_PROJECTION_KEY,
@@ -96,7 +97,9 @@ function registerContract(
  * Fix the conversation language for every request. Resolution is deferred to
  * assembly time so a settings change or a DSH language switch reaches the
  * next model call; `auto` reads the interface preference from the running
- * composition and falls back to the host locale.
+ * composition, then the operating system's language list, then the host
+ * locale. The OS probe is a thunk so it never runs while the language is
+ * pinned by settings.
  */
 function registerLanguage(ctx: any, service: CodingService): void {
   const prompt = ctx.get?.('systemPrompt') ?? ctx.systemPrompt
@@ -108,6 +111,7 @@ function registerLanguage(ctx: any, service: CodingService): void {
       text: () => languagePrompt(resolveHostLanguage({
         mode: service.options.language,
         loader: ctx.get?.('loader') ?? ctx.loader,
+        systemLanguages,
       })),
     })
   } catch (error) {

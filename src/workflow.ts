@@ -20,10 +20,20 @@ import {
  */
 export const CODING_PRESET_ID = 'coding'
 
+/** The mode one completed turn ran under, so an old card never moves. */
+export interface WorkflowTurn {
+  turn: number
+  mode: WorkflowMode
+}
+
 export interface WorkflowProjectionState {
   mode: WorkflowMode
   /** True only for sessions created by this bundle's Coding preset. */
   active: boolean
+  /** Highest turn the log has reached; its card stays interactive. */
+  latest: number
+  /** Mode as of each completed turn, oldest first. */
+  turns: WorkflowTurn[]
 }
 
 /** Session header fields that identify a user conversation of this preset. */
@@ -41,7 +51,25 @@ export function isActiveSession(header?: PresetHeader): boolean {
 }
 
 const modeSchema = z.enum(['auto', 'consult', 'review', 'code'])
-const stateSchema = z.object({ mode: modeSchema, active: z.boolean() }).strict()
+const turnSchema = z.object({ turn: z.number(), mode: modeSchema }).strict()
+const stateSchema = z.object({
+  mode: modeSchema,
+  active: z.boolean(),
+  latest: z.number(),
+  turns: z.array(turnSchema),
+}).strict()
+
+/**
+ * Cap the per-turn history. The state rides in every session checkpoint, so it
+ * stays bounded; a card older than the window falls back to the live mode.
+ */
+const MAX_TURNS = 100
+
+/** Numeric `turn/start` and `turn/end` payloads; anything else is ignored. */
+function eventTurn(event: unknown): number | undefined {
+  const value = (event as { data?: { turn?: unknown } })?.data?.turn
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
 
 /** Read a mode from a `coding_mode` tool call's JSON arguments. */
 function modeFromToolArguments(raw: unknown): WorkflowMode | undefined {
@@ -79,15 +107,17 @@ export function activationFromEvent(event: unknown): boolean | undefined {
  */
 export const workflowProjection = {
   key: WORKFLOW_PROJECTION_KEY,
-  // `active` joined the state and its fold reads session events, so cached
-  // checkpoints from the previous shape must be discarded.
-  stateVersion: 2,
+  // `turns` and `latest` joined the state and its fold reads session events,
+  // so cached checkpoints from the previous shape must be discarded.
+  stateVersion: 3,
   stateSchema,
   init: (header?: PresetHeader): WorkflowProjectionState => ({
     mode: 'auto',
     // Delegated subagent sessions inherit the preset but are not user
     // conversations, so the card stays off there too.
     active: isActiveSession(header),
+    latest: 0,
+    turns: [],
   }),
   apply: (state: WorkflowProjectionState, event: unknown): WorkflowProjectionState => {
     const value = event as {
@@ -102,6 +132,20 @@ export const workflowProjection = {
     if (value.type === 'tool/call' && name === 'coding_mode') {
       const mode = modeFromToolArguments(value.data?.arguments)
       return mode === undefined ? state : { ...state, mode }
+    }
+    // A card belongs to one turn: the turn it closed keeps the mode that was
+    // in force then, and only the newest turn's card may switch it. `latest`
+    // advances on `turn/start` so the previous card locks as soon as the next
+    // turn begins instead of when that turn happens to end.
+    const turn = eventTurn(event)
+    if (turn !== undefined && (value.type === 'turn/start' || value.type === 'turn/end')) {
+      const latest = Math.max(state.latest, turn)
+      if (value.type === 'turn/start') {
+        return latest === state.latest ? state : { ...state, latest }
+      }
+      const turns = state.turns.filter((item) => item.turn !== turn)
+      turns.push({ turn, mode: state.mode })
+      return { ...state, latest, turns: turns.slice(-MAX_TURNS) }
     }
     const active = activationFromEvent(event)
     if (active === undefined || active === state.active) return state
