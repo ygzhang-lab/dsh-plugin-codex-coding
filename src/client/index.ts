@@ -9,6 +9,7 @@ import {
 import {
   WORKFLOW_MODES,
   WORKFLOW_PROJECTION_KEY,
+  parseWorkflowMode,
   type WorkflowMode,
 } from "../mode.js";
 import { REASONING_PROJECTION_KEY } from "../reasoning-projection.js";
@@ -276,6 +277,10 @@ const CARD_CSS = [
   ".dsh-coding-card-status{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}",
   ".dsh-coding-card-hint{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}",
   ".dsh-coding-card-error{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary)}",
+  ".dsh-coding-command{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}",
+  ".dsh-coding-command-separator{flex:none;width:2px;height:2px;border-radius:1px;background:var(--dsw-alias-label-caption)}",
+  ".dsh-coding-command-error{color:var(--dsw-alias-state-error-primary)}",
+  ".dsh-coding-command-error .dsh-coding-card-title{color:inherit}",
   ".dsh-coding-card-actions{display:flex;flex-wrap:wrap;gap:6px}",
   ".dsh-coding-card-button{box-sizing:border-box;height:28px;padding:4px 8px;border:.5px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-button-floating-fill);color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;transition:background-color .12s,color .12s}",
   ".dsh-coding-card-button:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}",
@@ -318,24 +323,48 @@ function effortLabel(value: string): string {
   return value === "" ? value : value[0].toUpperCase() + value.slice(1);
 }
 
+/** One completed turn's reasoning snapshot, published by the Host. */
+interface ReasoningTurnView {
+  turn: number;
+  override?: ReasoningLevel | null;
+  userEffort?: string | null;
+  effort?: string | null;
+}
+
+interface ReasoningStateView {
+  override?: ReasoningLevel | null;
+  userEffort?: string | null;
+  effort?: string | null;
+  active?: boolean;
+  latest?: number;
+  turns?: ReasoningTurnView[];
+}
+
+interface WorkflowTurnView {
+  turn: number;
+  mode?: WorkflowMode;
+}
+
+interface WorkflowStateView {
+  mode?: WorkflowMode;
+  active?: boolean;
+  latest?: number;
+  turns?: WorkflowTurnView[];
+}
+
+type ReasoningSource = "settings" | "override" | "auto" | "pending";
+
 /**
  * Where the current reasoning level came from, matching the model-visible
  * `Reasoning:` line: a settings pin wins over a session override, and an
  * override wins over the effort the last request actually carried.
  */
 export function reasoningDisplay(
-  state:
-    | {
-        override?: ReasoningLevel | null;
-        userEffort?: string | null;
-        effort?: string | null;
-        active?: boolean;
-      }
-    | undefined,
+  state: ReasoningStateView | undefined,
   settingsMode?: unknown,
 ): {
   level: string;
-  source: "settings" | "override" | "auto" | "pending";
+  source: ReasoningSource;
 } | null {
   if (state === undefined || state.active === false) return null;
   const pinned =
@@ -357,21 +386,38 @@ export function reasoningDisplay(
 }
 
 /**
+ * The reasoning row a completed turn keeps. It is frozen with the card, so the
+ * current settings pin and the latest request must not rewrite history.
+ */
+export function reasoningTurnDisplay(
+  record: ReasoningTurnView | undefined,
+): { level: string; source: ReasoningSource } | null {
+  if (record === undefined) return null;
+  const override = record.override;
+  if (override !== null && override !== undefined)
+    return { level: effortLabel(override), source: "override" };
+  if (typeof record.userEffort === "string" && record.userEffort !== "")
+    return { level: effortLabel(record.userEffort), source: "override" };
+  if (typeof record.effort === "string" && record.effort !== "")
+    return { level: effortLabel(record.effort), source: "auto" };
+  return { level: "", source: "pending" };
+}
+
+/**
  * Per-turn card in the conversation. It reads the `codingWorkflow` projection
  * (registered only by the Coding preset, so other presets render nothing) and
  * switches the mode through the Host `workflow` command.
+ *
+ * One card closes each turn. Only the newest turn's card is a control: every
+ * earlier card keeps the mode and reasoning level that turn actually ran
+ * under, with its buttons disabled, so a later switch never rewrites history.
  */
 export function WorkflowModeCard(props: any): any {
   const state = props.useProjection?.(WORKFLOW_PROJECTION_KEY) as
-    | { mode?: WorkflowMode; active?: boolean }
+    | WorkflowStateView
     | undefined;
   const reasoningState = props.useProjection?.(REASONING_PROJECTION_KEY) as
-    | {
-        override?: ReasoningLevel | null;
-        userEffort?: string | null;
-        effort?: string | null;
-        active?: boolean;
-      }
+    | ReasoningStateView
     | undefined;
   const [busy, setBusy] = useState<WorkflowMode | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -379,14 +425,31 @@ export function WorkflowModeCard(props: any): any {
   // The projection key is registered process-wide, so every session publishes
   // a value; `active` is what limits the card to this preset's sessions. A
   // value without `active` comes from an older Host and still renders.
-  const mode = state?.mode;
+  const turn = typeof props.turn === "number" ? props.turn : undefined;
+  const turns = Array.isArray(state?.turns) ? state.turns : [];
+  const record =
+    turn === undefined ? undefined : turns.find((item) => item.turn === turn);
+  // Without a known turn (an older Host) the card keeps its original
+  // behaviour and stays a control.
+  const latest =
+    typeof state?.latest === "number"
+      ? state.latest
+      : (turns.at(-1)?.turn ?? 0);
+  const live = turn === undefined || turn >= latest;
+  const mode = live ? state?.mode : (record?.mode ?? state?.mode);
   if (mode === undefined || state?.active === false) return null;
 
   const status =
     mode === "auto"
       ? t("workflowAutoStatus")
       : `${t(modeLabelKey(mode))} — ${t("workflowManualStatus")}`;
-  const reasoning = reasoningDisplay(reasoningState, props.settings?.());
+  const reasoning = live
+    ? reasoningDisplay(reasoningState, props.settings?.())
+    : reasoningTurnDisplay(
+        turn === undefined
+          ? undefined
+          : reasoningState?.turns?.find((item) => item.turn === turn),
+      );
   const reasoningLevel =
     reasoning === null
       ? ""
@@ -405,7 +468,7 @@ export function WorkflowModeCard(props: any): any {
         );
 
   async function choose(next: WorkflowMode): Promise<void> {
-    if (busy !== null) return;
+    if (busy !== null || !live) return;
     setBusy(next);
     setError(null);
     try {
@@ -454,7 +517,7 @@ export function WorkflowModeCard(props: any): any {
             key: option,
             type: "button",
             className: "dsh-coding-card-button",
-            disabled: busy !== null,
+            disabled: busy !== null || !live,
             "aria-pressed": mode === option ? "true" : "false",
             onClick: () => {
               void choose(option);
@@ -464,10 +527,56 @@ export function WorkflowModeCard(props: any): any {
         ),
       ),
     ),
-    h("p", { className: "dsh-coding-card-hint" }, t("workflowSwitchHint")),
-    error === null
+    live
+      ? h("p", { className: "dsh-coding-card-hint" }, t("workflowSwitchHint"))
+      : null,
+    error === null || !live
       ? null
       : h("p", { className: "dsh-coding-card-error" }, error),
+  );
+}
+
+/**
+ * One-line replacement for the generic command card a `/workflow <mode>`
+ * switch would otherwise post into the transcript. The command lifecycle stays
+ * in the session log — the projection still derives the mode from it — so only
+ * its rendering is compact: the card above carries the interactive state, and
+ * this row just confirms what the switch changed.
+ */
+export function WorkflowCommandRow(props: any): any {
+  const t = props.t as (key: keyof typeof en) => string;
+  const node = props.node ?? {};
+  const outcome = node.outcome;
+  // A still-running switch settles in the same tick as the click; rendering
+  // nothing until then avoids a row that appears and immediately changes.
+  if (outcome === null || typeof outcome !== "object") return null;
+  const text = typeof outcome.text === "string" ? outcome.text : "";
+  const mode = parseWorkflowMode(node.args);
+  const failed = outcome.kind === "error";
+  const detail = failed
+    ? text === ""
+      ? t("workflowSwitchFailed")
+      : text
+    : mode !== undefined
+      ? `${t("workflowTitle")} → ${t(modeLabelKey(mode))}`
+      : // An argument-less `/workflow` asks for the full status, so it keeps
+        // the handler's text instead of the compact confirmation.
+        text;
+  if (detail === "") return null;
+  const name = typeof node.name === "string" ? node.name : "workflow";
+  return h(
+    "div",
+    {
+      className: failed
+        ? "dsh-coding-command dsh-coding-command-error"
+        : "dsh-coding-command",
+    },
+    h("span", { className: "dsh-coding-card-title" }, name),
+    h("span", {
+      className: "dsh-coding-command-separator",
+      "aria-hidden": true,
+    }),
+    h("span", null, detail),
   );
 }
 
@@ -785,7 +894,28 @@ export function apply(ctx: any): void {
           },
           ModeCard,
         ),
-      ),
+    ),
     "dsh-plugin-codex-coding: workflow mode card",
+  );
+
+  // The card switches the mode through the Host `workflow` command, whose
+  // lifecycle DSH logs and renders as a full command card. This keyed entry
+  // replaces that rendering with one confirmation line; the command entry
+  // itself stays in the session log, which is what the projection reads.
+  const CommandRow = (props: any) =>
+    h(WorkflowCommandRow, { ...props, t: props.t ?? translate });
+  ctx.effect(
+    () =>
+      ctx.slots.inject("conversation.chat.commandview", () =>
+        ctx.slots.register(
+          {
+            name: "conversation.chat.commandview",
+            key: "workflow",
+            locale: NS,
+          },
+          CommandRow,
+        ),
+      ),
+    "dsh-plugin-codex-coding: workflow command row",
   );
 }
