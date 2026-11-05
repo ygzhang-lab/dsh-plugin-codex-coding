@@ -6,19 +6,20 @@
 
 发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
-**版本号**：插件采用 `0.2.<内部流水号>`，只把前两位对齐到 DSH 的 `0.2.x`；第三位是内部构建序号，与 DSH 的补丁号或 rc 号没有对应关系，实际兼容范围以 `engines.dsh` 为准。当前版本 `0.2.1`，详见[版本策略](#版本策略)。
+**版本号**：插件采用 `0.2.<内部流水号>`，只把前两位对齐到 DSH 的 `0.2.x`；第三位是内部构建序号，与 DSH 的补丁号或 rc 号没有对应关系，实际兼容范围以 `engines.dsh` 为准。当前版本 `0.2.1-rc.3`，详见[版本策略](#版本策略)与[更新日志](CHANGELOG.md)。
 
 ## 特性
 
 - **交付契约**：固定为「先建立上下文 → 定义完成标准 → 最小修改 → 最窄验证 → 紧凑交付」五段。契约作为独立的 `coding:contract` 系统提示段落，不塞进人格前缀。
 - **工作流三模式**：默认自动选择 **问答模式 / 审查模式 / Codex 模式**；问答和方案讨论不会自动改代码，也可用 `coding_mode` 手动切换。
+- **逐轮模式卡片**：每轮结束的卡片记录该轮自己的工作流模式与推理等级；切换只影响后续轮次，历史卡片只读、按钮置灰。
 - **Codex 补丁工具**：新增 `apply_patch`，支持一次调用多文件、多 hunk 和移动（删除在底层文件系统提供 `remove` 时可用），严格解析 Codex patch 语法；上下文不匹配时给出 expected 与文件片段，而不是静默改错文件。
 - **Codex 工作流**：先检查、再计划（`todo_write`）、小步修改、运行最窄验证、检查自己的 diff，最后简洁汇报。
 - **DSH 原生适配**：优先复用 `read` / `write` / `edit` / `glob` / `grep` / `bash` / `job_*` / `todo_write` / `web_*` 等内置工具，不重复造轮子。
 - **推理等级自动切换**：`auto` 默认 **Low**；只有多文件，或一个功能模块的审查/重构，才用 **High**；项目级搭建/重构/审查或一次性无法修复的 Bug 才用 **Max**；问答、建议、简单修复、单文件审查始终 Low。
 - **本地 Skill 开关**：一键允许或禁止加载项目目录、用户目录中已安装的 Skill。
 - **DSH 插件工具开关**：多选控制该预设中已安装的 DSH 工具插件是否向 Agent 暴露工具。
-- **中英双语**：只带中文/英文两种语言包；界面跟随 DSH 界面语言，会话回复与工作流 Todo 用同一种语言，非中文环境一律英文。
+- **中英双语**：只带中文/英文两种语言包；界面跟随 DSH 界面语言，会话回复与工作流 Todo 用同一种语言，非中文环境一律英文。自动模式还会读操作系统界面语言，所以 macOS 登录 shell 的 `LANG=C.UTF-8` 不会再把中文界面变成英文回答。
 - **可视化配置 + 配置文件**：DSH Desktop 中通过插件配置页修改；CLI 中通过 profile 的 `cordis.patch.yml` 修改。
 - **低 Token 开销**：不额外调用模型做复杂度判断；`coding_context` 一次收集仓库状态、`AGENTS.md`、diff 统计和验证命令，替代多次探索性 shell。
 
@@ -63,6 +64,7 @@ Coding 会话每完成一轮，对话流末尾会出现一张 **工作流模式*
 - **自动**：由模型按本轮请求在 问答模式 / 审查模式 / Codex Coding 中选择；
 - **手动 审查模式**（或 问答模式 / Codex Coding）：本会话固定，模式说明会作为动态系统提示进入下一次请求；
 - 卡片上有 **自动 / 问答模式 / 审查模式 / Codex Coding** 四个按钮，点击即切换，对后续消息生效；切换结果写入会话日志，刷新或恢复会话后卡片仍显示同一模式。即使模型之后调用了 `coding_mode`，卡片也会同步。
+- **历史卡片只读**：每张卡片记录的是**它自己那一轮**的工作流模式和推理等级。切换模式或调整等级只影响之后开启的轮次；新一轮一开始（`turn/start`），上一轮的卡片就锁定——按钮置灰禁用、只保留 `aria-pressed` 标记当时生效的模式，提示文案也随之隐藏。刷新或恢复会话后，历史卡片仍显示各自的旧值，不会被当前状态覆盖。历史卡片的推理来源只区分 `会话覆盖` 与 `自动`：设置页的固定等级不写进会话日志，历史卡片不去猜一个当前值。
 - 卡片上另有一行 **推理等级**，显示本会话真正生效的等级和来源：`自动`（最近一次请求实际发送的 effort）、`会话覆盖`（输入框选择器里手选过，或 `coding_reasoning` 设过）、`设置固定`（插件设置页固定）；本轮还没发出请求时显示 `待确定`。
 - 卡片视觉直接复用 Desktop 的设计 token：`--dsw-alias-border-l1` 边框、`--dsw-radius-lg` 圆角、`--dsw-alias-label-*` 文字色、`--dsw-static-neutral-50/850` 明暗背景、`--dsw-focus-ring-*` 焦点环；样式按宿主自身的 `<style data-plugin-css>` 方式注入一次，和会话里其它官方卡片保持同一套观感。
 
@@ -73,6 +75,8 @@ Coding 会话每完成一轮，对话流末尾会出现一张 **工作流模式*
 /workflow review       # 本会话固定为审查模式
 /workflow auto         # 清除覆盖，回到自动选择
 ```
+
+卡片按钮通过宿主的 `workflow` 命令切换模式，命令生命周期仍写入会话日志（投影据此得出当前模式），但聊天流里原本的通用命令卡片被替换成一行确认（如 `workflow · 工作流模式 → 问答模式`）：模式本身由上方卡片展示，不再重复整段提示。切换失败时这一行显示失败原因；直接输入不带参数的 `/workflow` 是查看状态，仍保留完整说明。
 
 卡片上的按钮只用于切换工作流模式；推理等级那一行只读，调整仍用插件设置页或 `coding_reasoning`。
 
@@ -222,15 +226,18 @@ bundle 只插入两类行：
 | -------------------------------------- | ----------------------------------------------------------------------------- |
 | 插件管理器标题/描述（`locale/*.json`） | DSH 界面语言，由界面语言服务挑选，缺 `zh` 时用 `en`                          |
 | 设置页与会话模式卡片                   | 同上，`ctx.locale.register(ns, { zh, en })`，界面语言切换即时生效             |
-| 会话交互（回复、追问、交付说明）         | `coding:language` 系统提示：自动 = DSH 界面语言 → 宿主环境语言 → 英文        |
+| 会话交互（回复、追问、交付说明）         | `coding:language` 系统提示：自动 = DSH 界面语言 → 操作系统界面语言 → 宿主环境语言 → 英文 |
 | 工作流 Todo（条目与状态说明）           | 同上，与回复同一种语言；代码、路径、命令、报错原文保持原样                   |
 
 自动模式的判定顺序：
 
 1. 设置页/`language` 字段为 `zh` 或 `en` 时直接使用；
 2. 否则读取 DSH 已保存的界面语言（`locale.preference`，没有保存过就没有值）；
-3. 否则用宿主环境语言：`LC_ALL` / `LC_MESSAGES` / `LANG`，Windows 上取系统区域设置；
-4. 以 `zh` 开头的标签用中文，其余（`en`、`ja`、`de`、`C`…）一律英文。
+3. 否则读取**操作系统界面语言列表**（macOS 读 `defaults read -g AppleLanguages`，每个 Host 进程只探测一次；Windows/Linux 的 `Intl` 本身就反映系统区域，无需探测），取第一个本插件支持的语言（`zh`/`en`），跳过 `ja`、`de` 等未支持项；
+4. 否则用宿主环境语言：`LC_ALL` / `LC_MESSAGES` / `LANG`；`C`、`C.UTF-8`、`POSIX` 属于"没有语言信息"，会跳过而不是当成英文；
+5. 最后退回 `Intl` 默认区域：以 `zh` 开头的标签用中文，其余一律英文。
+
+第 3 步是 macOS 桌面场景的关键：DSH 桌面把**登录 shell 环境**传给 Host，macOS 的登录 shell 通常导出 `LANG=C.UTF-8`，而窗口界面跟随的是系统语言（`AppleLanguages`）。只看环境变量就会得到"中文界面、英文回答"。
 
 宿主侧没有可用的界面语言服务时（例如 headless 运行），第 2 步自动跳过，不会报错。
 
@@ -367,7 +374,39 @@ npm publish
 
 ### 发布工作流
 
-`.github/workflows/publish.yml` 只接受**手动触发**（`workflow_dispatch`）：日常 push、合并、打 tag 都不会打包或发布。发布时在 GitHub 的 **Actions → Publish → Run workflow** 里选择分支、dist-tag 和是否 dry run，需要仓库配置 `NPM_TOKEN` secret；`dry_run` 默认为 `true`，只跑检查和 `npm publish --dry-run`。
+`.github/workflows/publish.yml` 只接受**手动触发**（`workflow_dispatch`）：日常 push、合并、打 tag 都不会打包或发布。发布时在 GitHub 的 **Actions → Publish → Run workflow** 里选择分支、dist-tag 和是否 dry run；`dry_run` 默认为 `true`，只跑检查和 `npm publish --dry-run`。
+
+发布走 **npm 可信发布（Trusted Publishing / OIDC）**，仓库里不保存任何 npm token：
+
+- 工作流拆成两个 job：`check`（安装、typecheck、test、build，只读权限）把构建好的 `lib/` 上传为 artifact；`publish` 只下载这个 artifact 并执行 `npm publish`，`id-token: write` 只挂在 `publish` job 上；
+- `npm publish` 时用这次运行的 OIDC 身份直接向 registry 换取短期发布凭证；
+- 需要 npm CLI ≥ 11.5.1（Node 24 自带；工作流里有一步显式校验，不满足直接失败）；
+- 不要给 `actions/setup-node` 配 `registry-url`，也不要在发布步骤里设 `NODE_AUTH_TOKEN`：前者会往 `.npmrc` 写一行 `_authToken`，npm 就不再尝试 OIDC 交换；
+- Node 版本取自 `.node-version`（`setup-node` 的 `node-version-file`），本地与 CI 用同一个版本；
+- 发布步骤带 `--ignore-scripts`：`prepublishOnly` 的检查和构建只在 `check` job 跑一次，持有 OIDC 权限的步骤不执行包脚本；
+- provenance 由可信发布自动生成；工作流仍显式带 `--provenance`，两处一致。
+
+`dry_run=true` 只验证构建、打包和「版本是否已存在」，**不验证发布授权**：`npm publish --dry-run` 不会触发 OIDC 交换，trusted publisher 配错、environment 不匹配这类问题只会在真实发布时暴露。
+
+一次性配置（在 npmjs.com 上做，不在仓库里）：打开包 **Settings → Trusted Publisher → GitHub Actions**，填写
+
+| 字段 | 值 |
+| --- | --- |
+| Organization or user | `ygzhang-lab` |
+| Repository | `dsh-plugin-codex-coding` |
+| Workflow filename | `publish.yml` |
+| Environment | 留空（工作流没有声明 `environment`；填了就必须在 job 上声明同名 environment） |
+
+注意可信发布只能给**已经存在**的包配置：包还没发布过时，首次发布仍然要用一次 token（或本机 `npm publish` 登录会话），发布成功后再补上 trusted publisher，之后就能删掉 `NPM_TOKEN` secret。
+
+一次发版的完整步骤：
+
+1. 提升 `package.json` 的 `version`，并在 [`CHANGELOG.md`](CHANGELOG.md) 追加对应条目；
+2. 提交并推送；
+3. 打 tag 并推送，例如 `git tag v0.2.1-rc.3 && git push origin v0.2.1-rc.3`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
+4. 手动 Run workflow，先 `dry_run=true` 跑一次，确认无误再 `dry_run=false`。
+
+工作流带「版本已存在就跳过」的守卫，重复触发不会重复发布同一个版本；忘改版本号时同样会被跳过，不会报错。守卫是 fail-closed 的：只有 registry 明确返回 404 才认为「未发布」，查询超时、限流或 5xx 会让工作流失败而不是继续发布。
 
 也可以用 CLI 触发：
 
@@ -383,7 +422,9 @@ src/index.ts           Host 设置服务（dshCoding）
 src/preset.ts          预设内的契约注册、工具、推理策略、插件/Skill 限制
 src/prompt.ts          Codex 风格交付契约与工作流模式（coding:contract）
 src/mode.ts            工作流模式状态与手动切换说明
-src/language.ts        会话语言判定（DSH 界面语言 → 宿主语言 → 英文）
+src/workflow.ts        工作流模式的会话投影与逐轮模式快照（卡片读取）
+src/language.ts        会话语言判定（DSH 界面语言 → 操作系统语言 → 宿主语言 → 英文）
+src/system-language.ts 操作系统界面语言探测（macOS AppleLanguages，仅 Host）
 src/patch.ts           Codex patch 解析与 hunk 应用
 src/apply-patch.ts     apply_patch 工具、fs/sandbox 集成
 src/config.ts          配置、插件工具映射、复杂度分类器
@@ -393,6 +434,10 @@ src/context.ts         coding_context 的仓库快照
 src/client/index.ts    Desktop / Web 配置页
 test/                  单元与预设注册测试
 ```
+
+## 更新日志
+
+按版本记录修复与变更，见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 已知限制
 
