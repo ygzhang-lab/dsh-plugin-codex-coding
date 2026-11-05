@@ -23,15 +23,17 @@ concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
 
+# The OIDC identity is only requested by the publish job; the check job below
+# never holds it.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  check:
     # Publish only from the default branch, never from a stale feature ref.
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +43,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24.9.0
+          node-version-file: .node-version
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
 
@@ -57,28 +58,96 @@ jobs:
         run: |
           node -e 'const p=require("./package.json"); console.log(`${p.name}@${p.version}`)'
 
+      # The only generated input of the tarball: `files` ships lib plus files
+      # already in the checkout. Publish restores this instead of rebuilding.
+      - name: Store the built bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: lib
+          path: lib/**
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: check
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # OIDC trusted publishing needs this job-scoped permission; the exchange
+    # happens inside `npm publish`, and no npm token is stored anywhere.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `registry-url`: setup-node would write an `_authToken` line into
+      # .npmrc, and npm then never falls back to the OIDC exchange.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Restore the built bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: lib
+          path: lib
+
+      - name: Verify the restored bundle
+        run: |
+          test -f lib/index.js
+          test -f lib/client.js
+
+      - name: Verify npm supports trusted publishing
+        # Needs npm >= 11.5.1. Compare all three parts: 11.5.0 passes a
+        # major/minor-only check but cannot exchange the OIDC token.
+        run: |
+          VERSION=$(npm --version)
+          CORE=${VERSION%%-*}
+          IFS=. read -r MAJOR MINOR PATCH <<< "$CORE"
+          PATCH=${PATCH:-0}
+          TOO_OLD=false
+          if [ "$MAJOR" -lt 11 ]; then
+            TOO_OLD=true
+          elif [ "$MAJOR" -eq 11 ] && [ "$MINOR" -lt 5 ]; then
+            TOO_OLD=true
+          elif [ "$MAJOR" -eq 11 ] && [ "$MINOR" -eq 5 ] && [ "$PATCH" -lt 1 ]; then
+            TOO_OLD=true
+          fi
+          if [ "$TOO_OLD" = true ]; then
+            echo "npm $VERSION is too old for trusted publishing; require >= 11.5.1" >&2
+            exit 1
+          fi
+
       - name: Skip an already published version
         id: published
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Fail closed: only a definitive 404 counts as "not published". A
+        # registry outage or a rate limit must not turn into a publish attempt.
         run: |
           NAME=$(node -p 'require("./package.json").name')
           VERSION=$(node -p 'require("./package.json").version')
-          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+          if OUTPUT=$(npm view "$NAME@$VERSION" version 2>&1); then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "$NAME@$VERSION is already on npm; nothing to publish."
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            STATUS=$?
+            if printf '%s\n' "$OUTPUT" | grep -q 'E404'; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+            else
+              printf '%s\n' "$OUTPUT" >&2
+              echo "could not query the registry (npm exited $STATUS); refusing to guess" >&2
+              exit 1
+            fi
           fi
 
+      # `--ignore-scripts` keeps prepublishOnly out of CI: those checks already
+      # ran in the check job, and a publish step holding `id-token: write` must
+      # not execute package scripts. A dry run also does not exercise the OIDC
+      # exchange, so it proves the tarball, not the publish authorization.
       - name: Publish dry run
         if: inputs.dry_run && steps.published.outputs.exists == 'false'
-        run: npm publish --dry-run --tag "${{ inputs.dist_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --dry-run --ignore-scripts --tag "${{ inputs.dist_tag }}"
 
       - name: Publish
         if: ${{ !inputs.dry_run && steps.published.outputs.exists == 'false' }}
-        run: npm publish --access public --provenance --tag "${{ inputs.dist_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --ignore-scripts --tag "${{ inputs.dist_tag }}"
