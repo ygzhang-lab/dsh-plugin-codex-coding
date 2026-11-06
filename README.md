@@ -1,10 +1,16 @@
 # DSH Codex Coding
 
-一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Codex 风格 Coding 插件：用一份**交付契约**约束工作流，用 `apply_patch` 做外科式修改，并支持推理等级自动切换、本地 Skill 开关和 DSH 插件工具开关。
+一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Codex 风格 Coding 预设 + 交付契约，自动切换推理等级/工作流模式，并支持推理等级自动切换、本地 Skill 开关和 DSH 插件工具开关。
+
+[![GitHub Repo stars](https://img.shields.io/github/stars/ygzhang-lab/dsh-plugin-codex-coding?style=flat&logo=github)](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)
+![GitHub License](https://img.shields.io/github/license/ygzhang-lab/dsh-plugin-codex-coding)
+[![NPM Version](https://img.shields.io/npm/v/dsh-plugin-codex-coding)](https://www.npmjs.com/package/dsh-plugin-codex-coding)
+[![NPM Downloads](https://img.shields.io/npm/dy/dsh-plugin-codex-coding)](https://www.npmjs.com/package/dsh-plugin-codex-coding)
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/zh/plugins/ygzhang-lab/dsh-plugin-codex-coding)
 
 它由 **一个自定义 DSH 预设（Codex Coding）+ 三个自定义 DSH 工具** 组成。插件本身不在 Host 启动时改变任何 Agent 行为；唯一入口是在新建会话时选择 **Codex Coding** 预设。
 
-发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
+插件名/发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
 **版本号**：当前 `0.2.2-rc.1`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
 
@@ -106,12 +112,12 @@ Workflow mode: auto. Choose Q&A, Review, or Codex Coding from the current reques
 Reasoning: auto (level chosen by the preset at each step)
 ```
 
-| 提示内容                                                     | 含义                                                     |
-| ------------------------------------------------------------ | -------------------------------------------------------- |
-| `Reasoning: auto (level chosen by the preset at each step)`   | 自动：等级由分类器在 pre-step 决定，这行对所有自动请求逐字节相同 |
-| `Reasoning: manual (pinned by Coding settings)`               | 手动：插件设置页把等级固定为 `low`/`high`/`max`          |
-| `Reasoning: manual (session override)`                       | 手动：本会话用 `coding_reasoning(effort=...)` 覆盖过      |
-| `Reasoning: manual (picked medium in the chat box)`           | 手动：用户在输入框的选择器里手选了 `medium`              |
+| 提示内容                                                    | 含义                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| `Reasoning: auto (level chosen by the preset at each step)` | 自动：等级由分类器在 pre-step 决定，这行对所有自动请求逐字节相同 |
+| `Reasoning: manual (pinned by Coding settings)`             | 手动：插件设置页把等级固定为 `low`/`high`/`max`                  |
+| `Reasoning: manual (session override)`                      | 手动：本会话用 `coding_reasoning(effort=...)` 覆盖过             |
+| `Reasoning: manual (picked medium in the chat box)`         | 手动：用户在输入框的选择器里手选了 `medium`                      |
 
 不把等级和分类依据写进提示，是因为 DSH 会把 `systemPrompt.context()` 的贡献合成为**一条** runtime-context 快照消息，任一贡献变化就整条重新追加。等级和依据几乎每轮都变，那样会把整份快照（含语言、工作目录、沙箱策略）反复写进历史；实测长会话曾积累 9 份、约 10k 字符的作废快照。等级仍有两处可见：会话卡片的 **推理等级** 行，以及 `coding_reasoning` 工具输出。
 
@@ -139,31 +145,31 @@ DSH 桌面端的聊天输入框可以选模型和推理等级，它会写一条 
 
 由于 DSH v0.2.1.x → v0.2.2.x 之间 `sessionController.selectionFor` 等接口已弃用，插件的模型选择与推理定档路径随之改变，请按版本线配对安装：
 
-| DSH 版本   | 安装的插件版本                                                            | 说明                                                                     |
-| ---------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| v0.2.2.x   | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.1`）                   | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写      |
-| v0.2.1.x   | `dsh-plugin-codex-coding` v0.2.1.x（`0.2.1-rc.N`）                        | 旧接口线（`sessionController.selectionFor` 时代），与 DSH 0.2.1.x 配套     |
+| DSH 版本 | 安装的插件版本                                          | 说明                                                                   |
+| -------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.1`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
+| v0.2.1.x | `dsh-plugin-codex-coding` v0.2.1.x（`0.2.1-rc.N`）      | 旧接口线（`sessionController.selectionFor` 时代），与 DSH 0.2.1.x 配套 |
 
 `engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.1 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 上装 0.2.2 线会直接报 `incompatible-version`，而不是装上一个推理定档静默失效的版本。升级 DSH 后请同步升级插件。
 
 ### 兼容性与依赖
 
-| 项目             | 声明                                                                                                       | 说明                                                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 项目             | 声明                                                                                                       | 说明                                                                                                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | DSH              | `engines.dsh`: `>=0.2.2-rc.1 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），旧 Host 没有该服务，pre-step 也一样写不进去。0.2.1.x 请安装 0.2.1 线的插件，装错会被 `engines.dsh` 拦下 |
-| Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0         |
-| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                               |
-| 插件自带依赖     | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3`                                                        | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片）                                                      |
+| Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0                                                                                                         |
+| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
+| 插件自带依赖     | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3`                                                        | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片）                                                                                                                                                      |
 
 peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeers: false`，因此 `dsh plugin add` 可能打印 `missing peer` 警告，这是预期行为；不要为了消除警告把 `@deepseek-ai/cordis` 装进 profile——宿主与插件各加载一份 cordis 会让 `Service` 实例与依赖注入分裂。`dsh plugin add` 结束时出现该警告不影响安装，安装后 `dsh --profile <profile> --dump-config` 能看到 bundle 的两行即说明组合成功。
 
 ### 版本策略
 
-| 项目             | 规则                                                       | 示例                                                                 |
-| ---------------- | ---------------------------------------------------------- | -------------------------------------------------------------------- |
-| `0.2.<补丁号>`   | 与 DSH 的 `0.2.<补丁号>` 对齐                              | DSH `0.2.2.x` ↔ 插件 `0.2.2.x`；DSH `0.2.1.x` ↔ 插件 `0.2.1.x`       |
-| `-rc.N`          | 插件自己的预发布号，不要求与 DSH 的 rc 号一致              | 插件 `0.2.2-rc.1`                                                    |
-| 兼容范围         | 以 `engines.dsh` 和上面的安装表为准                        | `engines.dsh`: `>=0.2.2-rc.1 <0.3.0`                                 |
+| 项目           | 规则                                          | 示例                                                           |
+| -------------- | --------------------------------------------- | -------------------------------------------------------------- |
+| `0.2.<补丁号>` | 与 DSH 的 `0.2.<补丁号>` 对齐                 | DSH `0.2.2.x` ↔ 插件 `0.2.2.x`；DSH `0.2.1.x` ↔ 插件 `0.2.1.x` |
+| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.1`                                              |
+| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.1 <0.3.0`                           |
 
 ### DSH Desktop
 
@@ -256,12 +262,12 @@ bundle 只插入两类行：
 
 插件包内只有**中文**和**英文**两种语言包，没有第三种语言的翻译，也不做机器翻译：
 
-| 位置                                   | 语言来源                                                                      |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| 插件管理器标题/描述（`locale/*.json`） | DSH 界面语言，由界面语言服务挑选，缺 `zh` 时用 `en`                          |
-| 设置页与会话模式卡片                   | 同上，`ctx.locale.register(ns, { zh, en })`，界面语言切换即时生效             |
-| 会话交互（回复、追问、交付说明）         | `coding:language` 系统提示：自动 = DSH 界面语言 → 操作系统界面语言 → 宿主环境语言 → 英文 |
-| 工作流 Todo（条目与状态说明）           | 同上，与回复同一种语言；代码、路径、命令、报错原文保持原样                   |
+| 位置                                   | 语言来源                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 插件管理器标题/描述（`locale/*.json`） | DSH 界面语言，由界面语言服务挑选，缺 `zh` 时用 `en`                                      |
+| 设置页与会话模式卡片                   | 同上，`ctx.locale.register(ns, { zh, en })`，界面语言切换即时生效                        |
+| 会话交互（回复、追问、交付说明）       | `coding:language` 系统提示：自动 = DSH 界面语言 → 操作系统界面语言 → 宿主环境语言 → 英文 |
+| 工作流 Todo（条目与状态说明）          | 同上，与回复同一种语言；代码、路径、命令、报错原文保持原样                               |
 
 自动模式的判定顺序：
 
@@ -424,12 +430,12 @@ npm publish
 
 一次性配置（在 npmjs.com 上做，不在仓库里）：打开包 **Settings → Trusted Publisher → GitHub Actions**，填写
 
-| 字段 | 值 |
-| --- | --- |
-| Organization or user | `ygzhang-lab` |
-| Repository | `dsh-plugin-codex-coding` |
-| Workflow filename | `publish.yml` |
-| Environment | 留空（工作流没有声明 `environment`；填了就必须在 job 上声明同名 environment） |
+| 字段                 | 值                                                                            |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Organization or user | `ygzhang-lab`                                                                 |
+| Repository           | `dsh-plugin-codex-coding`                                                     |
+| Workflow filename    | `publish.yml`                                                                 |
+| Environment          | 留空（工作流没有声明 `environment`；填了就必须在 job 上声明同名 environment） |
 
 注意可信发布只能给**已经存在**的包配置：包还没发布过时，首次发布仍然要用一次 token（或本机 `npm publish` 登录会话），发布成功后再补上 trusted publisher，之后就能删掉 `NPM_TOKEN` secret。
 
