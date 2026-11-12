@@ -244,7 +244,11 @@ export function apply(ctx: any): void {
       // The card's activation needs no marker from here: it is folded from the
       // Host's own events, so this preset never writes a custom event type.
       const session = context.agent?.session
-      const projected = projectionService?.stateOf?.(session, WORKFLOW_PROJECTION_KEY)
+      // `snapshot()` is the supported read; `stateOf(session, key)` is
+      // deprecated in DSH 0.2.2 and logs a warning per key.
+      const projected = projectionService
+        ?.snapshot?.(session, [WORKFLOW_PROJECTION_KEY])
+        ?.values?.[WORKFLOW_PROJECTION_KEY]
       const projectedMode = parseWorkflowMode(projected?.mode)
       if (projectedMode !== undefined) setMode(context.agent, projectedMode)
     } catch {

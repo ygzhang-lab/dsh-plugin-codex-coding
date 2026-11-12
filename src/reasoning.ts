@@ -55,9 +55,24 @@ export function latestUserText(session: any): string {
   return latestUserTextIn(messages)
 }
 
+/**
+ * Read one client-visible projection through the supported snapshot API.
+ * DSH 0.2.2 deprecates `stateOf(session, key)`: `snapshot()` computes only the
+ * selected units at the Session cursor and returns their wire views, which is
+ * the value this preset reads.
+ */
+function projectionValue(projections: any, session: any, key: string): unknown {
+  try {
+    return projections?.snapshot?.(session, [key])?.values?.[key]
+  } catch {
+    return undefined
+  }
+}
+
 export function todosOf(ctx: any, session: any): readonly { status: string }[] {
   try {
-    const state = ctx.get('sessionProjections')?.stateOf?.(session, 'todos')
+    // The todo tool registers client-visible `todos`; its wire view is the list.
+    const state = projectionValue(ctx.get('sessionProjections'), session, 'todos')
     if (!Array.isArray(state)) return []
     return state.filter((item): item is { status: string } => (
       typeof item === 'object'
@@ -71,7 +86,9 @@ export function todosOf(ctx: any, session: any): readonly { status: string }[] {
 
 export function turnOf(ctx: any, session: any): number {
   try {
-    const boundary = ctx.get('sessionProjections')?.stateOf?.(session, 'turnBoundary')
+    // `turnBoundary` is Host-only state owned by the agent registry; read it
+    // through that domain service instead of the deprecated keyed projection.
+    const boundary = ctx.get('agents')?.turnBoundaryOf?.(session)
     return typeof boundary?.lastTurn === 'number' ? boundary.lastTurn : 0
   } catch {
     return 0
@@ -129,7 +146,11 @@ export class ReasoningController {
     const session = agent?.session
     if (session === undefined) return undefined
     try {
-      const state = this.service(agent, 'sessionProjections')?.stateOf?.(session, REASONING_PROJECTION_KEY)
+      const state = projectionValue(
+        this.service(agent, 'sessionProjections'),
+        session,
+        REASONING_PROJECTION_KEY,
+      )
       return typeof state === 'object' && state !== null ? state : undefined
     } catch {
       return undefined
@@ -447,7 +468,7 @@ export class ReasoningController {
   async diagnose(agent: any): Promise<string> {
     const lines: string[] = []
     for (const [label, scoped] of [['agent', agent?.ctx], ['preset', this.ctx]] as const) {
-      for (const name of ['llm', 'sessionProjections']) {
+      for (const name of ['llm', 'agents', 'sessionProjections']) {
         let state: string
         try {
           state = scoped?.get?.(name) === undefined ? 'missing' : 'present'

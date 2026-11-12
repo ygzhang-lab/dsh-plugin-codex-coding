@@ -45,7 +45,11 @@ interface FileSystemLike {
     policy?: unknown,
   ): Promise<FsWriteOutcome>
   processPath?(target: FsTarget): string
-  remove?(
+  /**
+   * Guarded deletion. DSH 0.2.2's filesystem service names this method
+   * `deleteFile`; the older `remove` name is not part of the contract.
+   */
+  deleteFile?(
     target: FsTarget,
     expected?: { version: string },
     signal?: AbortSignal,
@@ -189,8 +193,8 @@ async function planPatches(
     observe(ctx, target, { kind: 'present', version: info.version }, exec)
 
     if (file.kind === 'delete') {
-      if (typeof fs.remove !== 'function') {
-        fail(`deleting files is not supported by the configured filesystem; remove ${target.displayPath} another way`)
+      if (typeof fs.deleteFile !== 'function') {
+        fail(`deleting files is not supported by the configured filesystem; delete ${target.displayPath} another way`)
       }
       plans.push({ kind: 'delete', path: file.path, target, version: info.version, policy })
       continue
@@ -272,14 +276,14 @@ async function writePlans(
       }
 
       if (plan.kind === 'delete') {
-        if (typeof fs.remove !== 'function') fail('the filesystem no longer supports deletion')
-        await fs.remove(plan.target, { version: plan.version }, exec.signal, plan.policy)
+        if (typeof fs.deleteFile !== 'function') fail('the filesystem no longer supports deletion')
+        await fs.deleteFile(plan.target, { version: plan.version }, exec.signal, plan.policy)
         observe(ctx, plan.target, { kind: 'absent' }, exec)
         applied.push({ path: plan.path, operation: 'deleted' })
         continue
       }
 
-      if (typeof fs.remove !== 'function') fail('the filesystem no longer supports deletion')
+      if (typeof fs.deleteFile !== 'function') fail('the filesystem no longer supports deletion')
       const intent = await intentFor(ctx, plan.destination, { kind: 'createIfAbsent' }, exec)
       const outcome = await fs.writeText(
         plan.destination,
@@ -289,7 +293,7 @@ async function writePlans(
         plan.policy,
       )
       observe(ctx, plan.destination, { kind: 'present', version: outcome.version }, exec)
-      await fs.remove(plan.target, { version: plan.version }, exec.signal, plan.policy)
+      await fs.deleteFile(plan.target, { version: plan.version }, exec.signal, plan.policy)
       observe(ctx, plan.target, { kind: 'absent' }, exec)
       applied.push({ path: plan.path, operation: 'moved', moveTo: plan.moveTo })
     }
