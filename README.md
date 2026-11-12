@@ -12,7 +12,7 @@
 
 插件名/发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
-**版本号**：当前 `0.2.2-rc.1`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
+**版本号**：当前 `0.2.2-rc.2`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
 
 ## 快速使用方法
 
@@ -35,7 +35,7 @@
 - **交付契约**：固定为「先建立上下文 → 定义完成标准 → 最小修改 → 最窄验证 → 紧凑交付」五段。契约作为独立的 `coding:contract` 系统提示段落，不塞进人格前缀。
 - **工作流三模式**：默认自动选择 **问答模式 / 审查模式 / Codex 模式**；问答和方案讨论不会自动改代码，也可用 `coding_mode` 手动切换。
 - **逐轮模式卡片**：每轮结束的卡片记录该轮自己的工作流模式与推理等级；切换只影响后续轮次，历史卡片只读、按钮置灰。
-- **Codex 补丁工具**：新增 `apply_patch`，支持一次调用多文件、多 hunk 和移动（删除在底层文件系统提供 `remove` 时可用），严格解析 Codex patch 语法；上下文不匹配时给出 expected 与文件片段，而不是静默改错文件。
+- **Codex 补丁工具**：新增 `apply_patch`，支持一次调用多文件、多 hunk 和移动（删除在底层文件系统提供 `deleteFile` 时可用），严格解析 Codex patch 语法；上下文不匹配时给出 expected 与文件片段，而不是静默改错文件。
 - **Codex 工作流**：先检查、再计划（`todo_write`）、小步修改、运行最窄验证、检查自己的 diff，最后简洁汇报。
 - **DSH 原生适配**：优先复用 `read` / `write` / `edit` / `glob` / `grep` / `bash` / `job_*` / `todo_write` / `web_*` 等内置工具，不重复造轮子。
 - **推理等级自动切换**：`auto` 默认 **Low**；只有多文件，或一个功能模块的审查/重构，才用 **High**；项目级搭建/重构/审查或一次性无法修复的 Bug 才用 **Max**；问答、建议、简单修复、单文件审查始终 Low。
@@ -147,19 +147,20 @@ DSH 桌面端的聊天输入框可以选模型和推理等级，它会写一条 
 
 | DSH 版本 | 安装的插件版本                                          | 说明                                                                   |
 | -------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
-| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.1`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
+| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.2`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
 | v0.2.1.x | `dsh-plugin-codex-coding` v0.2.1.x（`0.2.1-rc.N`）      | 旧接口线（`sessionController.selectionFor` 时代），与 DSH 0.2.1.x 配套 |
 
-`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.1 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 上装 0.2.2 线会直接报 `incompatible-version`，而不是装上一个推理定档静默失效的版本。升级 DSH 后请同步升级插件。
+`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.2 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 或 0.2.2-rc.1 上装本插件会直接报 `incompatible-version`，而不是装上一个推理定档/投影读取静默失效的版本。升级 DSH 后请同步升级插件。
 
 ### 兼容性与依赖
 
 | 项目             | 声明                                                                                                       | 说明                                                                                                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DSH              | `engines.dsh`: `>=0.2.2-rc.1 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），旧 Host 没有该服务，pre-step 也一样写不进去。0.2.1.x 请安装 0.2.1 线的插件，装错会被 `engines.dsh` 拦下 |
+| DSH              | `engines.dsh`: `>=0.2.2-rc.2 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），会话投影读取依赖 `sessionProjections.snapshot()`，旧 Host 没有这些能力。0.2.1.x 与 0.2.2-rc.1 请安装对应版本线，装错会被 `engines.dsh` 拦下 |
 | Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0                                                                                                         |
 | 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
 | 插件自带依赖     | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3`                                                        | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片）                                                                                                                                                      |
+| 构建期依赖       | `markdown-to-jsx` `^7.7.17`                                                                                | 只打进 client bundle，把文档页的 README 渲染成 HTML；发布包运行时不解析它                                                                                                                                   |
 
 peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeers: false`，因此 `dsh plugin add` 可能打印 `missing peer` 警告，这是预期行为；不要为了消除警告把 `@deepseek-ai/cordis` 装进 profile——宿主与插件各加载一份 cordis 会让 `Service` 实例与依赖注入分裂。`dsh plugin add` 结束时出现该警告不影响安装，安装后 `dsh --profile <profile> --dump-config` 能看到 bundle 的两行即说明组合成功。
 
@@ -168,8 +169,8 @@ peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeer
 | 项目           | 规则                                          | 示例                                                           |
 | -------------- | --------------------------------------------- | -------------------------------------------------------------- |
 | `0.2.<补丁号>` | 与 DSH 的 `0.2.<补丁号>` 对齐                 | DSH `0.2.2.x` ↔ 插件 `0.2.2.x`；DSH `0.2.1.x` ↔ 插件 `0.2.1.x` |
-| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.1`                                              |
-| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.1 <0.3.0`                           |
+| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.2`                                              |
+| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.2 <0.3.0`                           |
 
 ### DSH Desktop
 
@@ -207,6 +208,8 @@ DSH Desktop 也可以在 **Plugins → Add plugin** 里直接填本地绝对路�
 
 本地挂载只用于开发验证；分发给他人请使用 npm 包名（见上一节）。
 
+文档页的内容在 `pnpm build` 时从根目录 `README.md` 注入客户端 bundle，因此改完 README 也要重新构建才会出现在插件页里。
+
 ## 唯一运行入口
 
 bundle 只插入两类行：
@@ -238,6 +241,8 @@ bundle 只插入两类行：
   - `中文` / `English`：固定会话语言
 - **Installed DSH plugins**
   - 多选：勾选表示允许该插件的工具；取消勾选只隐藏工具，不卸载插件
+- **插件说明及使用文档**
+  - 配置页顶部的入口；点开后进入二级页面，按 Markdown 渲染完整 README。页面顶部「← 返回」和底部左下角的「← 返回 插件配置」都回到配置页
 
 配置写入当前 profile，重启后保留。
 
@@ -362,7 +367,7 @@ Codex 兼容的补丁编辑器，用于多文件、多 hunk 或文件移动：
 - 先解析并计算所有文件，再统一写入；某个文件上下文不匹配时，不会留下改了一半的树。
 - 失败时报告 expected 行、文件片段和常见 marker 提示，方便模型一次修正。
 - 写入走 DSH 的 `ctx.fs`、`fs/write-intent`、`fs/observed` 和 sandbox policy，保留 read-before-write 与版本保护。
-- 删除依赖底层文件系统提供 `remove`；没有时明确报错，不会假装删除。
+- 删除依赖底层文件系统提供 `deleteFile`（DSH 0.2.2 的 fs 契约）；没有时明确报错，不会假装删除。
 
 ### `coding_context`
 
@@ -443,7 +448,7 @@ npm publish
 
 1. 提升 `package.json` 的 `version`，并在 [`CHANGELOG.md`](CHANGELOG.md) 追加对应条目；
 2. 提交并推送；
-3. 打 tag 并推送，例如 `git tag v0.2.2-rc.1 && git push origin v0.2.2-rc.1`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
+3. 打 tag 并推送，例如 `git tag v0.2.2-rc.2 && git push origin v0.2.2-rc.2`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
 4. 手动 Run workflow，先 `dry_run=true` 跑一次，确认无误再 `dry_run=false`。
 
 工作流带「版本已存在就跳过」的守卫，重复触发不会重复发布同一个版本；忘改版本号时同样会被跳过，不会报错。守卫是 fail-closed 的：只有 registry 明确返回 404 才认为「未发布」，查询超时、限流或 5xx 会让工作流失败而不是继续发布。
@@ -472,6 +477,9 @@ src/reasoning.ts       推理等级选择与模型能力适配
 src/reasoning-projection.ts 推理等级的会话投影（卡片读取）
 src/context.ts         coding_context 的仓库快照
 src/client/index.ts    Desktop / Web 配置页
+scripts/build.mjs      构建：注入 README 到客户端、生成类型与 entry
+locale/*.json          bundle 标题/简介与 meta.detail（插件页长说明改用 detail）
+locale/detail.*.md     插件页顶部简短说明；完整 README 在配置页的文档二级页面
 test/                  单元与预设注册测试
 ```
 
@@ -479,13 +487,17 @@ test/                  单元与预设注册测试
 
 按版本记录修复与变更，见 [`CHANGELOG.md`](CHANGELOG.md)。
 
+## 后续版本更新计划
+
+- **评估内置 `apply_patch` 是否替换自定义实现**：DSH 0.2.2-rc.2 的 `@deepseek-ai/dsh-tool-fs` 新增了内置 `apply_patch` 工具（配置项 `applyPatch`，默认关闭）。本插件目前继续注册自己的 `apply_patch`；后续版本会在测试和评估后决定是否改用内置实现替换。
+
 ## 已知限制
 
 - 类型声明直接来自 DSH npm 包自带的 `lib/types`，插件不再维护本地 shim；DSH 升级导致 API 类型变化时，`pnpm typecheck` 会直接暴露。
 - 自动等级是确定性启发式，不调用额外模型；默认 `Low`，只有明确的多文件、或功能模块审查/重构信号才升 `High`，`Max` 只由项目级或无法修复信号触发。若分类器低估，可在会话内用 `coding_reasoning(effort="max")` 覆盖。
 - 若入口点没有 `agent.model` 或 `llm` 服务（例如某些一次性 runner），推理等级切换会安全跳过；`coding_reasoning` 会显示 `(effort not applied)`。Skill、插件工具限制和自定义工具仍可用。
 - `apply_patch` 需要 Agent 作用域内有 `ctx.fs`；没有文件系统服务时该工具不会注册，原生 `read` / `edit` / `write` 仍可用。
-- `apply_patch` 的删除/移动依赖底层文件系统的 `remove`；某些远程或只读后端不提供，此时会明确报错，可改用原生工具或 `bash`。
+- `apply_patch` 的删除/移动依赖底层文件系统的 `deleteFile`；某些远程或只读后端不提供，此时会明确报错，可改用原生工具或 `bash`。
 - 工作流模式目前是**提示词级约束**，不会硬性禁用编辑工具；`consult` 下模型仍可调用只读工具，是否编辑由契约和用户指令约束。需要硬门禁时再升级到动态模式提示词或工具限制。
 - `coding_mode` 的手动覆盖保存在当前 Agent 会话内；重启或新建会话后恢复 `auto`。
 - 配置页只展示该预设已知的 DSH 工具插件，不展示任意第三方 bundle。

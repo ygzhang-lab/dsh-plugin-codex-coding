@@ -2,6 +2,30 @@
 
 本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则与 DSH 的对应关系见 README 的[版本策略](README.md#版本策略)。
 
+## [0.2.2-rc.2] - 2026-11-12
+
+### 修复
+
+- **`apply_patch` 的删除与移动在 DSH 0.2.2-rc.2 上失败**：DSH 的 `ctx.fs` 只提供 `deleteFile(target, expected, signal, policy?)`（`@deepseek-ai/dsh-fs-local`、`dsh-fs-sandbox` 均如此），没有旧名 `remove`。插件仍按旧名调用，于是 `*** Delete File:` 直接报 `apply_patch: deleting files is not supported by the configured filesystem`，`*** Move to:` 报 `apply_patch: the filesystem no longer supports deletion`；`Add` / `Update` 不受影响。改为 `fs.deleteFile()`，版本守卫仍是 `{ version }`；移动保持“先以 `createIfAbsent` 写目标、再删除源”的既有顺序，不依赖 `moveFile`。
+  - `FileSystemLike` 接口同步改名，并注明 DSH 0.2.2 的契约字段。
+  - 测试用 `MemoryFs` 从 `remove` 改为 `deleteFile`，回归用例改为“后端没有 `deleteFile` 时拒绝删除”，避免 mock 再次与真实 API 漂移而让该问题漏测。
+
+### 变更
+
+- **会话投影读取迁移到 DSH 0.2.2 支持的 `snapshot()`**：`sessionProjections.stateOf(session, key)` 在 0.2.2 已弃用，首次读每个 key 会写一条 `logger.warn`。工作流/推理两个投影改读 `sessionProjections.snapshot(session, [key]).values[key]`（只计算选中的客户端可见单元）；`turnBoundary` 改走 `agents.turnBoundaryOf(session)`；`todos` 改读 `snapshot(session, ['todos'])`（todo 工具注册的投影自带 wire view）。插件不再调用任何弃用投影读取，也不再产生弃用告警。
+- `coding_reasoning` 的诊断输出把 `agents` 一并列出，便于定位 `turnBoundary` 服务不可见的情况。
+- **插件页不再整篇铺开 README，改为二级页面**：DSH 的 bundle 页把包内 README 当作长说明直接渲染，且渲染器设置了 `omitHtml`，在那边用 `<details>` 折叠会被丢弃。现在 `locale/zh.json`、`locale/en.json` 的 `meta.detail` 指向 `locale/detail.zh.md` / `locale/detail.en.md` 的简短说明；完整 README 在构建时由 `scripts/build.mjs` 注入客户端 bundle，配置页顶部只留一个「插件说明及使用文档」入口，点击后切换到二级页面，用 `markdown-to-jsx` 渲染成 HTML 全文（表格、代码块、标题、链接）。页面顶部「← 返回」与底部左下角「← 返回 插件配置」都能回到配置页。未经过构建的运行环境（如单测）显示“未找到随包发布的说明文档”。
+- 客户端新增构建期依赖 `markdown-to-jsx`（仅打入 client bundle，运行时不从 profile 解析）。
+
+### 兼容性
+
+- `engines.dsh` 下界收窄为 `>=0.2.2-rc.2 <0.3.0`：会话投影读取改用 `sessionProjections.snapshot()` 与 `agents.turnBoundaryOf()`，只在下界版本起确认可用；安装/升级时由 DSH 的 `incompatible-version` 检查拦下更早的 Host。
+
+### 文档
+
+- README 新增「后续版本更新计划」：记录 DSH 0.2.2-rc.2 的 `dsh-tool-fs` 内置 `apply_patch`（配置项 `applyPatch`，默认关闭），以及后续版本测试评估后再决定是否替换本插件自定义 `apply_patch` 的计划。
+- README 把 `apply_patch` 删除/移动依赖的文件系统方法名从 `remove` 更正为 `deleteFile`，与 0.2.2 的 fs 契约一致。
+
 ## [0.2.2-rc.1] - 2026-11-06
 
 ### 新增
@@ -89,6 +113,7 @@
 
 - 首个发布：Codex Coding 预设、`apply_patch` 补丁工具、问答 / 审查 / Codex 三模式工作流、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。
 
+[0.2.2-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.2
 [0.2.1-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/compare/v0.2.1-rc.2...v0.2.1-rc.3
 [0.2.1-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/compare/v0.2.1-rc.1...v0.2.1-rc.2
 [0.2.1-rc.1]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.1-rc.1
