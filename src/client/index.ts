@@ -1,4 +1,5 @@
 import { createElement as h, useSyncExternalStore, useState } from "react";
+import Markdown from "markdown-to-jsx";
 import {
   PLUGIN_CATALOG,
   isCoreModule,
@@ -90,6 +91,10 @@ const en = {
     "Hand this session's reasoning level back to the automatic policy.",
   reasoningAutoFailed:
     "The reasoning level was not reset to automatic. Try again.",
+  docsButton: "Plugin guide & usage",
+  docsBack: "Back",
+  docsBackToConfig: "Back to settings",
+  docsEmpty: "No bundled README was found.",
 };
 
 const zh: typeof en = {
@@ -151,6 +156,10 @@ const zh: typeof en = {
   reasoningAutoButton: "自动",
   reasoningAutoButtonHint: "把本会话的推理等级交还给插件自动选择。",
   reasoningAutoFailed: "推理等级未切回自动，请重试。",
+  docsButton: "插件说明及使用文档",
+  docsBack: "返回",
+  docsBackToConfig: "返回 插件配置",
+  docsEmpty: "未找到随包发布的说明文档。",
 };
 
 const styles = {
@@ -269,7 +278,79 @@ const styles = {
     fontSize: "12px",
     lineHeight: "18px",
   },
+  docsPage: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  docsHeader: {
+    display: "flex",
+    alignItems: "baseline",
+    flexWrap: "wrap",
+    gap: "10px",
+  },
+  docsBack: {
+    boxSizing: "border-box",
+    padding: "4px 8px",
+    border: "0.5px solid var(--dsw-alias-border-l3)",
+    borderRadius: "8px",
+    background: "var(--dsw-alias-bg-layer-1)",
+    color: "var(--dsw-alias-label-secondary)",
+    font: "inherit",
+    fontSize: "12px",
+    lineHeight: "18px",
+    cursor: "pointer",
+  },
+  docsFooter: {
+    display: "flex",
+    justifyContent: "flex-start",
+    marginTop: "4px",
+  },
+  docsTitle: {
+    color: "var(--dsw-alias-label-primary)",
+    fontSize: "14px",
+    fontWeight: 500,
+    lineHeight: "20px",
+  },
+  docsEntry: {
+    boxSizing: "border-box",
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "8px",
+    width: "100%",
+    padding: "8px 10px",
+    border: "0.5px solid var(--dsw-alias-border-l3)",
+    borderRadius: "10px",
+    background: "var(--dsw-alias-bg-layer-1)",
+    color: "var(--dsw-alias-label-primary)",
+    font: "inherit",
+    fontSize: "13px",
+    lineHeight: "20px",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  docsBody: {
+    margin: 0,
+    padding: "12px 14px",
+    border: "0.5px solid var(--dsw-alias-border-l2)",
+    borderRadius: "10px",
+    background: "var(--dsw-alias-bg-layer-1)",
+    color: "var(--dsw-alias-label-secondary)",
+    fontSize: "13px",
+    lineHeight: "21px",
+  },
 } as const;
+
+declare const __DSH_CODING_DOCS__: string;
+
+/**
+ * The README text injected by `scripts/build.mjs`. Outside the built bundle
+ * (tests, another bundler) the constant is absent and the guide is empty.
+ */
+function pluginDocs(): string {
+  return typeof __DSH_CODING_DOCS__ === "string" ? __DSH_CODING_DOCS__ : "";
+}
 
 /**
  * The conversation card reuses the Desktop design tokens instead of inventing
@@ -301,6 +382,30 @@ const CARD_CSS = [
   ".dsh-coding-card-link:hover{color:var(--dsw-alias-label-primary)}",
   '.dsh-coding-card-link[aria-disabled="true"]{opacity:.6;cursor:default;pointer-events:none}',
   ".dsh-coding-card-link:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px;border-radius:2px}",
+  // Rendered-README page. Host tokens keep it consistent with the settings
+  // chrome; the container itself carries the inline box styles.
+  ".dsh-coding-docs-entry:hover,.dsh-coding-docs-back:hover{background:var(--dsw-alias-interactive-bg-hover)}",
+  ".dsh-coding-docs-entry:focus-visible,.dsh-coding-docs-back:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}",
+  ".dsh-coding-docs{overflow-wrap:anywhere}",
+  ".dsh-coding-docs>*:first-child{margin-top:0}",
+  ".dsh-coding-docs>*:last-child{margin-bottom:0}",
+  ".dsh-coding-docs h1{margin:18px 0 8px;color:var(--dsw-alias-label-primary);font-size:18px;font-weight:600;line-height:26px}",
+  ".dsh-coding-docs h2{margin:18px 0 8px;color:var(--dsw-alias-label-primary);font-size:16px;font-weight:600;line-height:24px}",
+  ".dsh-coding-docs h3{margin:14px 0 6px;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600;line-height:21px}",
+  ".dsh-coding-docs h4,.dsh-coding-docs h5,.dsh-coding-docs h6{margin:12px 0 6px;color:var(--dsw-alias-label-primary);font-size:13px;font-weight:600;line-height:20px}",
+  ".dsh-coding-docs p{margin:8px 0}",
+  ".dsh-coding-docs ul,.dsh-coding-docs ol{margin:8px 0;padding-left:20px}",
+  ".dsh-coding-docs li{margin:2px 0}",
+  ".dsh-coding-docs code{padding:1px 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:12px}",
+  ".dsh-coding-docs pre{margin:10px 0;padding:10px 12px;overflow:auto;border-radius:8px;background:var(--dsw-alias-bg-layer-2)}",
+  ".dsh-coding-docs pre code{padding:0;background:none;font-size:12px;line-height:18px;white-space:pre}",
+  ".dsh-coding-docs table{width:100%;margin:10px 0;border-collapse:collapse;font-size:12px}",
+  ".dsh-coding-docs th,.dsh-coding-docs td{padding:5px 8px;border:.5px solid var(--dsw-alias-border-l2);text-align:left;vertical-align:top}",
+  ".dsh-coding-docs th{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-weight:500}",
+  ".dsh-coding-docs a{color:var(--dsw-alias-state-business-primary);text-decoration:underline;text-underline-offset:2px}",
+  ".dsh-coding-docs blockquote{margin:8px 0;padding:2px 0 2px 10px;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}",
+  ".dsh-coding-docs hr{margin:14px 0;border:0;border-top:.5px solid var(--dsw-alias-border-l2)}",
+  ".dsh-coding-docs img{max-width:100%;height:auto}",
 ].join("");
 
 /**
@@ -686,6 +791,73 @@ function currentOptions(
   return normalizeOptions(value);
 }
 
+/** Documentation links open outside the app; in-page anchors stay put. */
+function DocsLink(props: any): any {
+  const href = typeof props.href === "string" ? props.href : "";
+  const external = /^https?:\/\//i.test(href);
+  return h(
+    "a",
+    {
+      href,
+      ...(external ? { target: "_blank", rel: "noreferrer noopener" } : {}),
+    },
+    props.children,
+  );
+}
+
+/**
+ * The complete README as its own page inside the plugin panel. DSH renders a
+ * bundle's long description above this slot and strips raw HTML, so the plugin
+ * ships a short `locale/*.json` `meta.detail` there and keeps the full guide on
+ * this second-level page, reached from the settings entry button.
+ */
+export function PluginDocsPage(props: any): any {
+  const t = props.t as (key: keyof typeof en) => string;
+  const text = typeof props.text === "string" ? props.text : pluginDocs();
+  const back = (label: "docsBack" | "docsBackToConfig") =>
+    h(
+      "button",
+      {
+        type: "button",
+        className: "dsh-coding-docs-back",
+        style: styles.docsBack,
+        onClick: () => props.onBack?.(),
+      },
+      `← ${t(label)}`,
+    );
+  return h(
+    "div",
+    { style: styles.docsPage },
+    h(
+      "div",
+      { style: styles.docsHeader },
+      back("docsBack"),
+      h("span", { style: styles.docsTitle }, t("docsButton")),
+    ),
+    text === ""
+      ? h("p", { style: styles.hint }, t("docsEmpty"))
+      : h(
+          "div",
+          {
+            className: "dsh-coding-docs",
+            style: styles.docsBody,
+            "data-docs": "readme",
+          },
+          h(
+            Markdown,
+            {
+              children: text,
+              options: {
+                forceBlock: true,
+                overrides: { a: { component: DocsLink } },
+              },
+            },
+          ),
+        ),
+    h("div", { style: styles.docsFooter }, back("docsBackToConfig")),
+  );
+}
+
 export function CodingSettingsPage(props: any): any {
   const form = props.form;
   const t = props.t as (key: keyof typeof en) => string;
@@ -696,11 +868,15 @@ export function CodingSettingsPage(props: any): any {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [docs, setDocs] = useState(false);
   const options = currentOptions(snapshot.value);
   const writable =
     snapshot.writable !== false && snapshot.revision !== undefined;
 
   if (props.view === "summary") return t("summary");
+  if (docs) {
+    return h(PluginDocsPage, { t, onBack: () => setDocs(false) });
+  }
   if (snapshot.status === "loading")
     return h("p", { style: styles.status }, t("loading"));
   if (snapshot.status === "unavailable" || snapshot.value === undefined) {
@@ -743,6 +919,18 @@ export function CodingSettingsPage(props: any): any {
     // The bundle page draws the package title and description above this
     // section, so the settings start with their own scope note.
     h("p", { style: styles.hint }, t("description")),
+
+    h(
+      "button",
+      {
+        type: "button",
+        className: "dsh-coding-docs-entry",
+        style: styles.docsEntry,
+        onClick: () => setDocs(true),
+      },
+      h("span", null, t("docsButton")),
+      h("span", { "aria-hidden": true }, "›"),
+    ),
 
     h(
       "fieldset",
