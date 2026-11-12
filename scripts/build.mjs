@@ -59,6 +59,11 @@ async function main() {
     outdir: staging,
   })
 
+  // DSH's bundle page renders a bundle's long description as Markdown and
+  // deliberately omits raw HTML, so a <details> block there would be dropped.
+  // The plugin ships a short `meta.detail` instead and keeps the full README
+  // behind one button in its settings page; the text rides in the client bundle.
+  const readme = await readFile(join(root, 'README.md'), 'utf8')
   const clientResult = await build({
     bundle: true,
     platform: 'browser',
@@ -67,6 +72,7 @@ async function main() {
     entryPoints: [join(root, 'src', 'client', 'index.ts')],
     write: false,
     external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    define: { __DSH_CODING_DOCS__: JSON.stringify(readme) },
     sourcemap: false,
     logLevel: 'info',
   })
