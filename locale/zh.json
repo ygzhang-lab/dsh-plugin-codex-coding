@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "DSH Codex Coding",
-    "description": "DSH Codex 风格 Coding 插件：交付契约、Consult/Review/Code 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。"
+    "description": "DSH Codex 风格 Coding 插件：交付契约、Consult/Review/Code 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。",
+    "detail": "locale/detail.zh.md"
   }
 }
