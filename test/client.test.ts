@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   apply,
   CodingSettingsPage,
+  PluginDocsPage,
   installCardStyles,
   WorkflowModeCard,
   WorkflowCommandRow,
@@ -115,6 +116,48 @@ describe("Coding settings page", () => {
     // Four reasoning levels plus three conversation-language choices.
     expect(count(html, 'type="radio"')).toBe(7);
     expect(html).toMatch(/(?:value="en" checked=""|checked="" value="en")/);
+  });
+
+  it("opens the full README as a second-level page", () => {
+    const page = renderToStaticMarkup(
+      createElement(CodingSettingsPage, {
+        view: "page",
+        t,
+        form: form({
+          reasoning: "auto",
+          localSkills: true,
+          disabledPlugins: [],
+        }),
+      }),
+    );
+    expect(page).toContain("docsButton");
+    expect(page).toContain("dsh-coding-docs-entry");
+    expect(page).not.toContain('data-docs="readme"');
+
+    const docs = renderToStaticMarkup(
+      createElement(PluginDocsPage, {
+        t,
+        text: "# 标题\n\n| 名称 | 值 |\n| --- | --- |\n| a | 1 |\n\n`code` 与 **粗体**",
+      }),
+    );
+    expect(docs).toContain("dsh-coding-docs-back");
+    expect(docs).toContain("docsBack");
+    expect(count(docs, "dsh-coding-docs-back")).toBe(2);
+    expect(docs).toContain("docsBackToConfig");
+    expect(docs).toContain('data-docs="readme"');
+    expect(docs).toContain("<h1");
+    expect(docs).toContain("<table");
+    expect(docs).toContain("<th");
+    expect(docs).toContain("<code");
+    expect(docs).toContain("<strong");
+  });
+
+  it("explains a missing bundled guide instead of rendering an empty page", () => {
+    const html = renderToStaticMarkup(
+      createElement(PluginDocsPage, { t, text: "" }),
+    );
+    expect(html).toContain("docsEmpty");
+    expect(html).not.toContain('data-docs="readme"');
   });
 
   it("renders a compact summary for the plugin row", () => {

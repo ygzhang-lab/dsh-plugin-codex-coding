@@ -62,13 +62,18 @@ function harness(options: CodingOptions, input: HarnessOptions = {}) {
       }
       if (name === "sessionProjections") {
         return {
-          stateOf: (_session: unknown, key: string) =>
-            key === "turnBoundary" ? { lastTurn: 1 } : null,
+          snapshot: (_session: unknown, keys: readonly string[]) => ({
+            asOfSeq: -1,
+            values: Object.fromEntries(keys.map((key) => [key, null])),
+          }),
           register: (definition: any) => {
             projections.push(definition);
             return () => {};
           },
         };
+      }
+      if (name === "agents") {
+        return { turnBoundaryOf: () => ({ lastTurn: 1 }) };
       }
       return undefined;
     },

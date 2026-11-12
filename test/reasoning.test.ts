@@ -30,12 +30,16 @@ function makeContext(efforts: string[], reasoningState?: unknown) {
       }
       if (name === 'sessionProjections') {
         return {
-          stateOf: (_session: unknown, key: string) => {
-            if (key === 'turnBoundary') return { lastTurn: 1 }
-            if (key === 'codingReasoning') return reasoningState ?? null
-            return null
-          },
+          snapshot: (_session: unknown, keys: readonly string[]) => ({
+            asOfSeq: -1,
+            values: Object.fromEntries(
+              keys.map((key) => [key, key === 'codingReasoning' ? reasoningState ?? null : null]),
+            ),
+          }),
         }
+      }
+      if (name === 'agents') {
+        return { turnBoundaryOf: () => ({ lastTurn: 1 }) }
       }
       return undefined
     },
@@ -86,14 +90,21 @@ describe('latestUserText', () => {
 describe('projection helpers', () => {
   it('drops malformed todo entries and falls back on projection errors', () => {
     const ctx = {
-      get: () => ({
-        stateOf: () => [null, 'x', { status: 1 }, { status: 'pending' }],
-      }),
+      get: (name: string) => name === 'agents'
+        ? { turnBoundaryOf: () => ({ lastTurn: 3 }) }
+        : {
+            snapshot: (_session: unknown, keys: readonly string[]) => ({
+              values: Object.fromEntries(keys.map((key) => [
+                key,
+                key === 'todos' ? [null, 'x', { status: 1 }, { status: 'pending' }] : null,
+              ])),
+            }),
+          },
     }
     expect(todosOf(ctx, {})).toEqual([{ status: 'pending' }])
-    expect(todosOf({ get: () => ({ stateOf: () => { throw new Error('cold') } }) }, {})).toEqual([])
-    expect(turnOf(ctx, {})).toBe(0)
-    expect(turnOf({ get: () => ({ stateOf: () => ({ lastTurn: 3 }) }) }, {})).toBe(3)
+    expect(todosOf({ get: () => ({ snapshot: () => { throw new Error('cold') } }) }, {})).toEqual([])
+    expect(turnOf({ get: () => undefined }, {})).toBe(0)
+    expect(turnOf(ctx, {})).toBe(3)
   })
 })
 
@@ -176,10 +187,12 @@ describe('ReasoningController', () => {
         }
         if (name === 'sessionProjections') {
           return {
-            stateOf: (_session: unknown, key: string) =>
-              key === 'turnBoundary' ? { lastTurn: turn } : plan,
+            snapshot: (_session: unknown, keys: readonly string[]) => ({
+              values: Object.fromEntries(keys.map((key) => [key, key === 'todos' ? plan : null])),
+            }),
           }
         }
+        if (name === 'agents') return { turnBoundaryOf: () => ({ lastTurn: turn }) }
         return undefined
       },
     }

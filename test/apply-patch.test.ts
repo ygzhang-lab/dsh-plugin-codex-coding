@@ -47,7 +47,8 @@ class MemoryFs {
     return { operation: current === undefined ? 'create' as const : 'update' as const, version: String(next) }
   }
 
-  async remove(target: { targetKey: string }, expected?: { version: string }) {
+  /** DSH 0.2.2 filesystem contract: guarded deletion is `deleteFile`. */
+  async deleteFile(target: { targetKey: string }, expected?: { version: string }) {
     const current = this.info(target.targetKey)
     if (current === undefined) throw new Error('missing file')
     if (expected !== undefined && current.version !== expected.version) throw new Error('stale version')
@@ -196,9 +197,9 @@ describe('apply_patch tool', () => {
     expect(fs.files.has('gone.txt')).toBe(false)
   })
 
-  it('rejects deletion when the backend cannot remove files', async () => {
+  it('rejects deletion when the backend cannot delete files', async () => {
     const fs = new MemoryFs()
-    ;(fs as any).remove = undefined
+    ;(fs as any).deleteFile = undefined
     fs.files.set('gone.txt', 'bye\n')
     fs.versions.set('gone.txt', 1)
     const { patch } = harness(fs)
