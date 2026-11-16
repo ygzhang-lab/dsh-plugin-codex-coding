@@ -1,5 +1,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerApplyPatch } from './apply-patch.js'
+import { registerBundledSkills } from './bundled-skills.js'
 import { gatherContext } from './context.js'
 import {
   disabledToolNames,
@@ -128,6 +129,22 @@ function registerPatch(ctx: any, service: CodingService): void {
   }
   const fs = ctx.get?.('fs') ?? ctx.fs
   if (fs !== undefined) registerApplyPatch(ctx, enabled)
+}
+
+/**
+ * Publish the skills shipped inside this package. The profile patch is static
+ * YAML, so DSH's `bundledSkillDir` cannot point at a package-relative path;
+ * registering a provider in the preset scope keeps the skills scoped to Coding
+ * sessions and lets project/user copies of a name take precedence.
+ */
+function registerSkills(ctx: any): void {
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['skills'], (child: any) => {
+      registerBundledSkills(child)
+    })
+    return
+  }
+  registerBundledSkills(ctx)
 }
 
 /**
@@ -404,4 +421,5 @@ export function apply(ctx: any): void {
   // Register after the context/reasoning/mode tools so the visible tool order
   // stays stable and the patch editor reads as the optional surgical-edit path.
   registerPatch(ctx, service)
+  registerSkills(ctx)
 }
