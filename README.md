@@ -1,6 +1,6 @@
 # DSH Codex Coding
 
-一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Codex 风格 Coding 预设 + 交付契约，自动切换推理等级/工作流模式，并支持推理等级自动切换、本地 Skill 开关和 DSH 插件工具开关。
+一个面向 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 Codex 风格 Coding 预设 + 交付契约，自动切换推理等级/工作流模式，并支持推理等级自动切换、内置与本地 Skill 开关和 DSH 插件工具开关。
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/ygzhang-lab/dsh-plugin-codex-coding?style=flat&logo=github)](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)
 ![GitHub License](https://img.shields.io/github/license/ygzhang-lab/dsh-plugin-codex-coding)
@@ -12,7 +12,7 @@
 
 插件名/发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
-**版本号**：当前 `0.2.2-rc.2`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
+**版本号**：当前 `0.2.2-rc.3`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
 
 ## 快速使用方法
 
@@ -26,7 +26,7 @@
 
 4. **需要时切工作流**：用会话末尾卡片上的 **自动 / 问答模式 / 审查模式 / Codex模式**，或在输入框执行 `/workflow review`；也可以让 Agent 调 `coding_mode(mode="review")`。切过之后，上一轮的卡片会自动锁定为只读。
 5. **需要时调推理等级**：一般在输入框的模型选择器里手选；手选后卡片会出现 **自动** 链接，点一下就把等级交还给插件自动选择。也可以让 Agent 调 `coding_reasoning(effort="high")`，或在设置页把等级固定为 `low`/`high`/`max`。
-6. **改配置**：DSH Desktop 在 **Plugins → DSH Codex Coding** 里改推理策略、会话语言、本地 Skill 与工具开关；CLI 改 profile 的 `cordis.patch.yml`。
+6. **改配置**：DSH Desktop 在 **Plugins → DSH Codex Coding** 里改推理策略、会话语言、Skill 与工具开关；CLI 改 profile 的 `cordis.patch.yml`。
 
 想确认当前状态，直接问 Agent，或执行 `/workflow`、让 Agent 调 `coding_reasoning()`。
 
@@ -39,7 +39,7 @@
 - **Codex 工作流**：先检查、再计划（`todo_write`）、小步修改、运行最窄验证、检查自己的 diff，最后简洁汇报。
 - **DSH 原生适配**：优先复用 `read` / `write` / `edit` / `glob` / `grep` / `bash` / `job_*` / `todo_write` / `web_*` 等内置工具，不重复造轮子。
 - **推理等级自动切换**：`auto` 默认 **Low**；只有多文件，或一个功能模块的审查/重构，才用 **High**；项目级搭建/重构/审查或一次性无法修复的 Bug 才用 **Max**；问答、建议、简单修复、单文件审查始终 Low。
-- **本地 Skill 开关**：一键允许或禁止加载项目目录、用户目录中已安装的 Skill。
+- **内置 + 本地 Skill**：插件内置 19 个 Skill（Vue、Vite、Vitest、VueUse、Nuxt、Pinia、pnpm、Slidev、tsDown、Turborepo、UnoCSS、VitePress、Go/Java/Python/FastAPI 等，位于 `skills/`，来源见 [Skill 来源与致谢](#来源与致谢)），同时加载项目目录、用户目录中的 Skill；一键允许或禁止。
 - **DSH 插件工具开关**：多选控制该预设中已安装的 DSH 工具插件是否向 Agent 暴露工具。
 - **中英双语**：只带中文/英文两种语言包；界面跟随 DSH 界面语言，会话回复与工作流 Todo 用同一种语言，非中文环境一律英文。自动模式还会读操作系统界面语言，所以 macOS 登录 shell 的 `LANG=C.UTF-8` 不会再把中文界面变成英文回答。
 - **可视化配置 + 配置文件**：DSH Desktop 中通过插件配置页修改；CLI 中通过 profile 的 `cordis.patch.yml` 修改。
@@ -147,19 +147,19 @@ DSH 桌面端的聊天输入框可以选模型和推理等级，它会写一条 
 
 | DSH 版本 | 安装的插件版本                                          | 说明                                                                   |
 | -------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
-| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.2`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
+| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.3`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
 | v0.2.1.x | `dsh-plugin-codex-coding` v0.2.1.x（`0.2.1-rc.N`）      | 旧接口线（`sessionController.selectionFor` 时代），与 DSH 0.2.1.x 配套 |
 
-`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.2 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 或 0.2.2-rc.1 上装本插件会直接报 `incompatible-version`，而不是装上一个推理定档/投影读取静默失效的版本。升级 DSH 后请同步升级插件。
+`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.3 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 或 0.2.2-rc.2 及更早版本上装本插件会直接报 `incompatible-version`，而不是装上一个推理定档/投影读取静默失效的版本。升级 DSH 后请同步升级插件。
 
 ### 兼容性与依赖
 
 | 项目             | 声明                                                                                                       | 说明                                                                                                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DSH              | `engines.dsh`: `>=0.2.2-rc.2 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），会话投影读取依赖 `sessionProjections.snapshot()`，旧 Host 没有这些能力。0.2.1.x 与 0.2.2-rc.1 请安装对应版本线，装错会被 `engines.dsh` 拦下 |
+| DSH              | `engines.dsh`: `>=0.2.2-rc.3 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），会话投影读取依赖 `sessionProjections.snapshot()`，旧 Host 没有这些能力。0.2.1.x 与 0.2.2-rc.2 及更早版本请安装对应版本线，装错会被 `engines.dsh` 拦下 |
 | Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0                                                                                                         |
-| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.1-rc.5 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
-| 插件自带依赖     | `@deepseek-ai/schemastery` `^3.18.5`、`zod` `4.4.3`                                                        | 分别用于 Host 配置 schema 与会话投影（工作流模式卡片）                                                                                                                                                      |
+| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.2-rc.3 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
+| 插件自带依赖     | `@deepseek-ai/schemastery` `^3.19.0`、`zod` `4.6.6`、`yaml` `^2.9.1`                                       | 分别用于 Host 配置 schema、会话投影（工作流模式卡片）与内置 Skill 的 frontmatter 解析                                                                                                                        |
 | 构建期依赖       | `markdown-to-jsx` `^7.7.17`                                                                                | 只打进 client bundle，把文档页的 README 渲染成 HTML；发布包运行时不解析它                                                                                                                                   |
 
 peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeers: false`，因此 `dsh plugin add` 可能打印 `missing peer` 警告，这是预期行为；不要为了消除警告把 `@deepseek-ai/cordis` 装进 profile——宿主与插件各加载一份 cordis 会让 `Service` 实例与依赖注入分裂。`dsh plugin add` 结束时出现该警告不影响安装，安装后 `dsh --profile <profile> --dump-config` 能看到 bundle 的两行即说明组合成功。
@@ -169,8 +169,8 @@ peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeer
 | 项目           | 规则                                          | 示例                                                           |
 | -------------- | --------------------------------------------- | -------------------------------------------------------------- |
 | `0.2.<补丁号>` | 与 DSH 的 `0.2.<补丁号>` 对齐                 | DSH `0.2.2.x` ↔ 插件 `0.2.2.x`；DSH `0.2.1.x` ↔ 插件 `0.2.1.x` |
-| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.2`                                              |
-| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.2 <0.3.0`                           |
+| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.3`                                              |
+| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.3 <0.3.0`                           |
 
 ### DSH Desktop
 
@@ -234,8 +234,8 @@ bundle 只插入两类行：
 - **Reasoning effort**
   - `Automatic`：自动切换（默认）
   - `Low` / `High` / `Max`：固定等级
-- **Local skills**
-  - 允许 / 禁止本地 Skill
+- **Skills**
+  - 允许 / 禁止 Skill（插件内置的 `skills/` 与项目目录、用户目录中的本地 Skill）
 - **Conversation language / 会话语言**
   - `Automatic`：跟随 DSH 界面语言，未设置时跟随宿主环境语言；不是中文即英文
   - `中文` / `English`：固定会话语言
@@ -255,7 +255,7 @@ bundle 只插入两类行：
   name: dsh-plugin-codex-coding
   config:
     reasoning: auto # auto | low | high | max
-    localSkills: true # true | false
+    localSkills: true # true | false（内置 + 本地 Skill 总开关）
     language: auto # auto | zh | en
     disabledPlugins: # 要隐藏工具的工具插件模块名
       - "@deepseek-ai/dsh-tool-web"
@@ -316,14 +316,55 @@ coding_reasoning(effort="max")     # 本次会话固定为 Max（仅 auto 模式
 coding_reasoning(effort="auto")    # 清除会话覆盖
 ```
 
-## 本地 Skill
+## Skill
 
-`Local skills` 打开时，**Codex Coding** 预设挂载：
+**Codex Coding** 预设使用两类 Skill：
 
-- `@deepseek-ai/dsh-skill-filesystem`
-- `@deepseek-ai/dsh-tool-skill`
+- **内置 Skill**：插件包 `skills/` 下的 19 个 Skill（清单与来源见下）。DSH 的 profile patch 是静态 YAML，无法把 `dsh-skill-filesystem.bundledSkillDir` 指向插件安装目录，因此由预设内置的 `codex-bundled` provider 发布，候选标记为 `source: bundled`、rank 600。
+- **本地 Skill**：`@deepseek-ai/dsh-skill-filesystem` 发现项目的 `.dsh/skills`、`.agents/skills` 和用户的 `~/.dsh/skills`、`~/.agents/skills`；`@deepseek-ai/dsh-tool-skill` 提供 `skill` 工具。
 
-关闭时不会改动 Host 的 Skill 注册表，而是对该预设的新会话隐藏 `skill` 工具；`dsh-tool-skill` 会在下一次 pre-step 发布空目录，从而停用旧 Skill 名称。
+同名 Skill 按 rank 取优先级：项目（100/200）> 用户（400/500）> 内置（600）。因此项目或用户目录里的同名副本会覆盖内置内容，内置 Skill 只作为兜底，且只对 Codex Coding 会话可见。
+
+`Skills` 关闭时不会改动 Host 的 Skill 注册表，而是对该预设的新会话隐藏 `skill` 工具；`dsh-tool-skill` 会在下一次 pre-step 发布空目录，从而停用旧 Skill 名称。
+
+### 内置 Skill 清单
+
+目录名与声明名不一致时，`skill` 工具按声明名调用（`golang-best-practices` 目录声明为 `golang-fullstack-best-practices`）。
+
+| Skill（声明名） | 用途 | 来源 / 致谢 | 许可 |
+| --- | --- | --- | --- |
+| `vue` | Vue 3 Composition API、`<script setup>`、响应式与内置组件 | Anthony Fu，生成自 [vuejs/docs](https://github.com/vuejs/docs)，脚本见 [antfu/skills](https://github.com/antfu/skills) | 未标注 |
+| `vite` | Vite 配置、插件 API、SSR、Vite 8 Rolldown 迁移 | Anthony Fu，生成自 [vitejs/vite](https://github.com/vitejs/vite)，脚本见 antfu/skills | 未标注 |
+| `vitest` | Vitest 测试、mock、覆盖率与过滤 | Anthony Fu，生成自 [vitest-dev/vitest](https://github.com/vitest-dev/vitest) | 未标注 |
+| `vitepress` | VitePress 文档站、主题与 Markdown | Anthony Fu，生成自 [vuejs/vitepress](https://github.com/vuejs/vitepress) | 未标注 |
+| `nuxt` | Nuxt SSR、自动导入与文件路由 | Anthony Fu，生成自 [nuxt/nuxt](https://github.com/nuxt/nuxt) | 未标注 |
+| `pinia` | Pinia 状态管理 | Anthony Fu，生成自 [vuejs/pinia](https://github.com/vuejs/pinia) | 未标注 |
+| `pnpm` | pnpm 工作区、catalog、patch、override | Anthony Fu，生成自 [pnpm/pnpm](https://github.com/pnpm/pnpm) | 未标注 |
+| `unocss` | UnoCSS 规则、快捷方式与 preset | Anthony Fu，生成自 [unocss/unocss](https://github.com/unocss/unocss) | 未标注 |
+| `vue-best-practices` | Vue 3、SSR、Volar、vue-tsc 与 Composition API 规范 | [vuejs-ai](https://github.com/vuejs-ai) | MIT |
+| `vue-router-best-practices` | Vue Router 4 守卫、路由参数与生命周期 | [vuejs-ai](https://github.com/vuejs-ai)；LICENSE 署名 hyf0、SerKo | MIT |
+| `vue-testing-best-practices` | Vitest、Vue Test Utils、Playwright | [vuejs-ai](https://github.com/vuejs-ai)；LICENSE 署名 hyf0、SerKo | MIT |
+| `vueuse-functions` | VueUse composable 选型与用法 | SerKo（[serkodev](https://github.com/serkodev)） | MIT |
+| `slidev` | Slidev 幻灯片、动画与演示文稿 | Slidev / Anthony Fu | MIT |
+| `tsdown` | tsdown 库打包、类型声明与多格式 | VoidZero Inc.、Kevin Deng（[rolldown/tsdown](https://github.com/rolldown/tsdown)） | MIT |
+| `turborepo` | Turborepo 任务管线、缓存与边界 | Vercel, Inc（[文档](https://turborepo.dev/docs)） | MIT |
+| `golang-fullstack-best-practices` | Go + GORM + PostgreSQL 全栈审查（协调 9 个子 Skill） | saifoelloh（[GitHub](https://github.com/saifoelloh)） | MIT |
+| `fastapi` | FastAPI + uv、Pydantic、SSE 与 OpenAPI | [eggboy/skills](https://github.com/eggboy/skills) | 未声明 |
+| `java-best-practices` | Java 8–25、Spring Boot、JUnit 5 与迁移 | [eggboy/skills](https://github.com/eggboy/skills) | 未声明 |
+| `python-best-practices` | Python 3.12+、Ruff、pytest、数据框与安全 | [eggboy/skills](https://github.com/eggboy/skills) | 未声明 |
+
+### 来源与致谢
+
+这些 Skill 的版权与许可归原作者及上游项目所有，本插件只负责打包、按声明名注册，并在 Coding 会话中按需加载；除给破坏性/全局命令示例加上安全约束外，没有修改其余正文，也没有把作者信息当作插件的作者信息。
+
+- **Anthony Fu / [antfu/skills](https://github.com/antfu/skills)**：`vue`、`vite`、`vitest`、`vitepress`、`nuxt`、`pinia`、`pnpm`、`unocss` 由 Anthony Fu 从各项目官方文档/仓库生成，感谢其整理与持续同步。
+- **[vuejs-ai](https://github.com/vuejs-ai)**：`vue-best-practices`、`vue-router-best-practices`、`vue-testing-best-practices`，MIT；其中两份路由/测试 Skill 的 LICENSE 署名为 hyf0、SerKo。
+- **Vercel**：`turborepo`（MIT，Vercel, Inc）。
+- **Slidev、tsdown、VueUse**：`slidev`（Anthony Fu 与 Slidev 贡献者，MIT）、`tsdown`（VoidZero Inc. 与 Kevin Deng，MIT）、`vueuse-functions`（SerKo，MIT）。
+- **saifoelloh**：`golang-fullstack-best-practices`（MIT）。
+- **[eggboy/skills](https://github.com/eggboy/skills)**：`fastapi`、`java-best-practices`、`python-best-practices`，来自 *Agent Skills for Copilot, Claude* 仓库。感谢整理与分享；该仓库目前没有 `LICENSE` 文件（GitHub 识别为未声明许可），如需公开再分发或商用，请先与作者确认授权。
+- `slidev`、`tsdown`、`turborepo`、`vue-router-best-practices`、`vue-testing-best-practices`、`vueuse-functions` 自带 `SYNC.md`，记录了同步时的上游目录与 Git SHA；具体许可以各目录内的 `LICENSE.md` 为准。
+- 以上 Skill 若有打包方式不妥、来源标注错误或遗漏，欢迎在仓库提 issue/PR，或联系删除与更正。
 
 ## DSH 插件工具开关
 
@@ -448,7 +489,7 @@ npm publish
 
 1. 提升 `package.json` 的 `version`，并在 [`CHANGELOG.md`](CHANGELOG.md) 追加对应条目；
 2. 提交并推送；
-3. 打 tag 并推送，例如 `git tag v0.2.2-rc.2 && git push origin v0.2.2-rc.2`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
+3. 打 tag 并推送，例如 `git tag v0.2.2-rc.3 && git push origin v0.2.2-rc.3`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
 4. 手动 Run workflow，先 `dry_run=true` 跑一次，确认无误再 `dry_run=false`。
 
 工作流带「版本已存在就跳过」的守卫，重复触发不会重复发布同一个版本；忘改版本号时同样会被跳过，不会报错。守卫是 fail-closed 的：只有 registry 明确返回 404 才认为「未发布」，查询超时、限流或 5xx 会让工作流失败而不是继续发布。
@@ -465,6 +506,7 @@ gh workflow run publish.yml -f dist_tag=latest -f dry_run=false
 cordis.patch.yml       bundle 行 + Codex Coding 预设声明
 src/index.ts           Host 设置服务（dshCoding）
 src/preset.ts          预设内的契约注册、工具、推理策略、插件/Skill 限制
+src/bundled-skills.ts  内置 Skill 的发现、frontmatter 解析与 codex-bundled provider
 src/prompt.ts          Codex 风格交付契约与工作流模式（coding:contract）
 src/mode.ts            工作流模式状态与手动切换说明
 src/workflow.ts        工作流模式的会话投影与逐轮模式快照（卡片读取）
@@ -480,6 +522,7 @@ src/client/index.ts    Desktop / Web 配置页
 scripts/build.mjs      构建：注入 README 到客户端、生成类型与 entry
 locale/*.json          bundle 标题/简介与 meta.detail（插件页长说明改用 detail）
 locale/detail.*.md     插件页顶部简短说明；完整 README 在配置页的文档二级页面
+skills/                随包内置的开源 Skill（每个目录一个 SKILL.md）
 test/                  单元与预设注册测试
 ```
 

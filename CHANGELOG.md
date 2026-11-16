@@ -2,6 +2,27 @@
 
 本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则与 DSH 的对应关系见 README 的[版本策略](README.md#版本策略)。
 
+## [0.2.2-rc.3] - 2026-11-16
+
+### 新增
+
+- **内置开源 Skill**：插件包新增 `skills/`（19 个 Skill：Vue、VueUse、Vite、Vitest、VitePress、Nuxt、Pinia、pnpm、Slidev、tsDown、Turborepo、UnoCSS、Go/Java/Python/FastAPI 规范等）。DSH 的 profile patch 是静态 YAML，无法把 `bundledSkillDir` 指向插件安装目录，因此 Coding 预设注册自己的 `codex-bundled` provider（`source: bundled`、rank 600），只在该预设作用域生效；项目/用户目录的同名 Skill 仍按更低 rank 优先。README 新增内置 Skill 清单与来源致谢；`fastapi`、`java-best-practices`、`python-best-practices` 标注来源 [eggboy/skills](https://github.com/eggboy/skills)（该仓库未声明许可证）。
+- 设置项「本地 Skill」改名为「Skill」，允许/禁止现在同时覆盖内置与本地 Skill；`localSkills` 配置键不变。
+- `yaml` 从 devDependency 改为运行时依赖，用于解析内置 Skill 的 frontmatter；构建时保持 external，与 `zod` 一致。
+
+### 移除
+
+- **移除内置 Skill `web-design-guidelines`**：其 `SKILL.md` 要求模型在每次审查前用 `WebFetch` 拉取 `raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md`，并按其中的规则和输出格式执行；该内容不在包内、未固定 commit，属于间接提示注入面，故不再随包提供。README 的清单、来源致谢与 Skill 计数同步为 19。
+
+### 变更
+
+- **收紧内置 Skill 的破坏性/全局命令示例**：四个受影响的 `SKILL.md` 新增 `Safety boundaries` 一节。`pnpm` 的清理命令改成项目内显式路径（`./node_modules`、`./dist`），`chmod ~/.pnpm-store` 改为先用 `pnpm store path` 定位、只处理实际 store，`link --global`/`add -g`/`publish` 标注全局与发布影响，CI 的 `config set` 加 `--location project`；`tsdown` 的 release 示例改用 `rm('dist')` + `execFileSync`，去掉自动 `npm publish`，清理改用 `tsdown --clean`；`nuxt` 的 `npm i -g vercel/netlify-cli` 改为 `npx`，`rsync` 加 `--dry-run` 与占位主机，容器加 `--rm`；`slidev` 改为项目内安装 CLI，并注明 `${PWD}` 读写挂载风险。
+- **开发依赖对齐 DSH 0.2.2-rc.3**：`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` 升到 `0.2.2-rc.3`，`@deepseek-ai/cordis` 升到 `4.1.0`，`@deepseek-ai/schemastery` 升到 `^3.19.0`，`zod` 升到 `4.6.6`，与本机 DSH 内置版本一致；`pnpm typecheck` 与 240 个测试在 rc.3 的类型定义下通过。
+
+### 兼容性
+
+- `engines.dsh` 与 `peerDependencies` 中的 `@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` 下界统一为 `>=0.2.2-rc.3 <0.3.0`（此前 peer 仍是 `>=0.2.1-rc.5`）。DSH 0.2.2-rc.2 及更早版本会被 `incompatible-version` 拦下，需先升级 DSH。
+
 ## [0.2.2-rc.2] - 2026-11-12
 
 ### 修复
@@ -113,6 +134,7 @@
 
 - 首个发布：Codex Coding 预设、`apply_patch` 补丁工具、问答 / 审查 / Codex 三模式工作流、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。
 
+[0.2.2-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.3
 [0.2.2-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.2
 [0.2.1-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/compare/v0.2.1-rc.2...v0.2.1-rc.3
 [0.2.1-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/compare/v0.2.1-rc.1...v0.2.1-rc.2
