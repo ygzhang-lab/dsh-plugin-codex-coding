@@ -35,6 +35,7 @@ describe('published bundle', () => {
     expect(manifest.files).toContain('cordis.patch.yml')
     expect(manifest.files).toContain('lib')
     expect(manifest.files).toContain('locale')
+    expect(manifest.files).toContain('skills')
     expect(manifest.files).toContain('icon.svg')
   })
 
@@ -45,10 +46,10 @@ describe('published bundle', () => {
       expect(manifest.dependencies?.[name]).toBeUndefined()
       expect(typeof manifest.peerDependencies?.[name]).toBe('string')
     }
-    // schemastery (Config schema) and zod (session projection) are the only
-    // packages the plugin installs for itself.
-    expect(Object.keys(manifest.dependencies)).toEqual(['@deepseek-ai/schemastery', 'zod'])
-    expect(manifest.engines.dsh).toBe('>=0.2.2-rc.2 <0.3.0')
+    // schemastery (Config schema), zod (session projection), and yaml (bundled
+    // skill frontmatter) are the only packages the plugin installs for itself.
+    expect(Object.keys(manifest.dependencies)).toEqual(['@deepseek-ai/schemastery', 'yaml', 'zod'])
+    expect(manifest.engines.dsh).toBe('>=0.2.2-rc.3 <0.3.0')
     expect(manifest.engines.node).toBe('>=24.9.0')
 
     const declared = new Set([
