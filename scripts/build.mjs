@@ -49,7 +49,7 @@ async function main() {
     platform: 'node',
     target: 'node20',
     format: 'esm',
-    external: ['@deepseek-ai/*', 'zod'],
+    external: ['@deepseek-ai/*', 'zod', 'yaml'],
     sourcemap: false,
     logLevel: 'info',
     entryPoints: {
