@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-codex-coding",
-  "version": "0.2.2-rc.2",
+  "version": "0.2.2-rc.3",
   "description": "DSH Codex 风格的 Coding 预设：交付契约、Consult/Review/Codex 工作流、apply_patch 补丁编辑、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。Codex-style coding preset for DeepSeek Harness with a delivery contract, consultation/review/coding workflow modes, apply_patch editing, and adaptive reasoning.",
   "type": "module",
   "main": "./lib/index.js",
@@ -25,6 +25,7 @@
   "files": [
     "lib",
     "locale",
+    "skills",
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
@@ -75,21 +76,22 @@
   },
   "engines": {
     "node": ">=24.9.0",
-    "dsh": ">=0.2.2-rc.2 <0.3.0"
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.5",
-    "zod": "4.4.3"
+    "@deepseek-ai/schemastery": "^3.19.0",
+    "yaml": "^2.9.1",
+    "zod": "4.6.6"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.5 <5",
-    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.5 <0.3.0",
-    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.5 <0.3.0"
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.3 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.3 <0.3.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.5",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.3",
     "@types/node": "^24.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.7",
@@ -98,8 +100,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0",
-    "yaml": "^2.9.1"
+    "vitest": "^3.2.0"
   },
   "packageManager": "pnpm@12.16.1"
 }
