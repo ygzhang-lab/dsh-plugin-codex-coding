@@ -42,10 +42,10 @@ const en = {
   reasoningMax: "Max",
   reasoningMaxHint:
     "Rare: creative project setup, project-wide refactor, project-level review, or an unfixable bug.",
-  skills: "Local skills",
-  skillsHint: `Allow the ${PRESET} preset to discover and load skills installed in the project and the user skill directories.`,
-  skillsOn: "Allow local skills",
-  skillsOff: "Block local skills",
+  skills: "Skills",
+  skillsHint: `Allow the ${PRESET} preset to use the open-source skills bundled with this plugin, plus skills installed in the project and user skill directories.`,
+  skillsOn: "Allow skills",
+  skillsOff: "Block skills",
   language: "Conversation language",
   languageHint:
     "Only Chinese and English ship with this plugin. Automatic follows the DSH interface language, then the host locale; any locale that is not Chinese shows English. Replies and todo items use the same language.",
@@ -98,7 +98,7 @@ const en = {
 };
 
 const zh: typeof en = {
-  summary: `${PLUGIN}：自动 / 问答 / 审查 / Codex 工作流、交付契约、apply_patch、推理等级自动切换、本地 Skill 与工具开关。`,
+  summary: `${PLUGIN}：自动 / 问答 / 审查 / Codex 工作流、交付契约、apply_patch、推理等级自动切换、Skill 与工具开关。`,
   description: `这些选项在新建会话并选择 ${PRESET} 预设时生效；已有会话保留启动时的策略。`,
   reasoning: "推理等级",
   reasoningHint:
@@ -112,10 +112,10 @@ const zh: typeof en = {
   reasoningMax: "Max",
   reasoningMaxHint:
     "仅用于创造性项目搭建、项目级重构、项目级代码审查、一次性无法修复的 Bug。",
-  skills: "本地 Skill",
-  skillsHint: `允许 ${PRESET} 预设发现并加载项目目录和用户目录中已安装的 Skill。`,
-  skillsOn: "允许加载本地 Skill",
-  skillsOff: "禁止加载本地 Skill",
+  skills: "Skill",
+  skillsHint: `允许 ${PRESET} 预设使用插件内置的开源 Skill，以及项目目录和用户目录中已安装的 Skill。`,
+  skillsOn: "允许加载 Skill",
+  skillsOff: "禁止加载 Skill",
   language: "会话语言",
   languageHint:
     "插件只带中文和英文两种语言包。自动模式先跟随 DSH 界面语言，再跟随宿主环境语言；不是中文时一律显示英文。会话回复和 todo 条目使用同一种语言。",
