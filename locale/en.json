@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "DSH Codex Coding",
-    "description": "DSH Codex style Coding plugin with Consult/Review/Code workflow modes, a delivery contract, apply_patch editing, and adaptive reasoning.",
+    "description": "DSH Codex style Coding plugin with Consult/Review/Code workflow modes, a delivery contract, apply_patch editing, adaptive reasoning, and bundled skills.",
     "detail": "locale/detail.en.md"
   }
 }
