@@ -2,6 +2,20 @@
 
 本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则与 DSH 的对应关系见 README 的[版本策略](README.md#版本策略)。
 
+## [0.2.2-rc.4] - 2026-11-19
+
+### 变更
+
+- **版本线与 DSH 0.2.2-rc.4 对齐**：`engines.dsh` 下界从 `0.2.2-rc.3` 提升到 `>=0.2.2-rc.4 <0.3.0`，peer 依赖 `@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` 同步收窄；开发依赖升到 `0.2.2-rc.4`。插件源码与工具行为没有变化。
+- **按 DSH 0.2.2-rc.4 更新说明核对依赖**：rc.4 是 rc.3 的补丁式发布，只修「模型请求收到异常消息响应」与「LiveShare 在桌面端无法创建分享」两项，没有改动本插件消费的 `agent.model.select()`、`sessionProjections.snapshot()`、`agents.turnBoundaryOf()` 等接口。`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` 在 rc.3 → rc.4 之间依赖清单相同（内部包版本号随发布线递增）；宿主随附的 `@deepseek-ai/cordis` `~4.1.0`、`@deepseek-ai/schemastery` `~3.19.0`、`zod` `4.6.6` 也没有变化，因此除版本线外不需要调整依赖。
+
+### 已知问题（DSH 宿主，待修复）
+
+- **多子任务会话结束后「任务」面板可能停在第一个任务**：DSH 0.2.2-rc.2/rc.3（插件 `0.2.2-rc.2`/`0.2.2-rc.3`）下，任务被拆成多个待办（`todo_write`）执行时，全部子任务已完成、最终结果也已输出，但界面上的「任务」面板仍显示第一个任务处于 `in_progress`，看起来像没执行完。
+  - **定位**：该面板由宿主渲染，不在本插件内。面板读取 `@deepseek-ai/dsh-tool-todo` 注册的 `todos` 会话投影，由 `@deepseek-ai/dsh-client-ui-conversation` 的 `TodoDock`/`TodoPanel` 绘制；插件只注册每轮的「工作流模式」卡片与 `/workflow` 命令行，不注册 `conversation.input.dock`，也不渲染任何 todo UI。
+  - **证据**：会话日志中多步任务最后一次 `todo/write` 快照都是全部 `completed`，说明数据已正确写入、最终结果已产出；剩余问题在宿主的投影刷新/渲染环节。对话流里每张「更新任务清单」卡片按调用分别记录，第一张永远显示当时的初始清单，属于宿主的按调用记录设计，不是实时进度。
+  - **结论**：标记为 DSH 宿主固有问题，待 DSH 修复；本插件不做规避性改动（插件侧只通过提示词要求模型维护待办，无法改变宿主渲染）。
+
 ## [0.2.2-rc.3] - 2026-11-16
 
 ### 新增
@@ -134,6 +148,7 @@
 
 - 首个发布：Codex Coding 预设、`apply_patch` 补丁工具、问答 / 审查 / Codex 三模式工作流、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。
 
+[0.2.2-rc.4]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.4
 [0.2.2-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.3
 [0.2.2-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.2
 [0.2.1-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/compare/v0.2.1-rc.2...v0.2.1-rc.3

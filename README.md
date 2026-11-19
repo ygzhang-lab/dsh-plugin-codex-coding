@@ -12,7 +12,7 @@
 
 插件名/发布包名是 `dsh-plugin-codex-coding`，在 DSH 中的插件显示名是 **DSH Codex Coding**。源码与 issue 在 [ygzhang-lab/dsh-plugin-codex-coding](https://github.com/ygzhang-lab/dsh-plugin-codex-coding)。
 
-**版本号**：当前 `0.2.2-rc.3`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
+**版本号**：当前 `0.2.2-rc.4`。插件版本号与 DSH 版本号的对应关系见[安装](#安装)和[版本策略](#版本策略)，历史见[更新日志](CHANGELOG.md)。
 
 ## 快速使用方法
 
@@ -147,18 +147,18 @@ DSH 桌面端的聊天输入框可以选模型和推理等级，它会写一条 
 
 | DSH 版本 | 安装的插件版本                                          | 说明                                                                   |
 | -------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
-| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.3`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
+| v0.2.2.x | `dsh-plugin-codex-coding` v0.2.2.x（当前 `0.2.2-rc.4`） | 走 `agent.model.select()` 定档，不注册 `agent/request` 的 effort 改写  |
 | v0.2.1.x | `dsh-plugin-codex-coding` v0.2.1.x（`0.2.1-rc.N`）      | 旧接口线（`sessionController.selectionFor` 时代），与 DSH 0.2.1.x 配套 |
 
-`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.3 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 或 0.2.2-rc.2 及更早版本上装本插件会直接报 `incompatible-version`，而不是装上一个推理定档/投影读取静默失效的版本。升级 DSH 后请同步升级插件。
+`engines.dsh` 只声明 0.2.2 线（`>=0.2.2-rc.4 <0.3.0`），DSH 的插件安装/升级会按它拦下不匹配的组合：在 0.2.1.x 或 0.2.2-rc.3 及更早版本上装本插件会直接报 `incompatible-version`，而不是装上一个推理定档/投影读取静默失效的版本。升级 DSH 后请同步升级插件。
 
 ### 兼容性与依赖
 
 | 项目             | 声明                                                                                                       | 说明                                                                                                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DSH              | `engines.dsh`: `>=0.2.2-rc.3 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），会话投影读取依赖 `sessionProjections.snapshot()`，旧 Host 没有这些能力。0.2.1.x 与 0.2.2-rc.2 及更早版本请安装对应版本线，装错会被 `engines.dsh` 拦下 |
+| DSH              | `engines.dsh`: `>=0.2.2-rc.4 <0.3.0`                                                                       | 这条线只在 DSH 0.2.2 上工作：推理定档依赖 `agent.model.select()`（`agent/inbox/claimed` 同步定档），会话投影读取依赖 `sessionProjections.snapshot()`，旧 Host 没有这些能力。0.2.1.x 与 0.2.2-rc.3 及更早版本请安装对应版本线，装错会被 `engines.dsh` 拦下 |
 | Node.js          | `engines.node`: `>=24.9.0`                                                                                 | 与 DSH 0.2.2+ 的 Node 要求一致；DSH Desktop 内置 Node 24.x，`.node-version` 与发布 CI 同步为 24.9.0                                                                                                         |
-| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.2-rc.3 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
+| 宿主提供（peer） | `@deepseek-ai/cordis` `>=4.0.5 <5`、`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` `>=0.2.2-rc.4 <0.3.0` | 不随插件安装；由 DSH 安装目录按包名解析，插件只消费宿主的实例                                                                                                                                               |
 | 插件自带依赖     | `@deepseek-ai/schemastery` `^3.19.0`、`zod` `4.6.6`、`yaml` `^2.9.1`                                       | 分别用于 Host 配置 schema、会话投影（工作流模式卡片）与内置 Skill 的 frontmatter 解析                                                                                                                        |
 | 构建期依赖       | `markdown-to-jsx` `^7.7.17`                                                                                | 只打进 client bundle，把文档页的 README 渲染成 HTML；发布包运行时不解析它                                                                                                                                   |
 
@@ -169,8 +169,8 @@ peer 包必须由宿主提供。DSH 初始化的 profile 固定 `autoInstallPeer
 | 项目           | 规则                                          | 示例                                                           |
 | -------------- | --------------------------------------------- | -------------------------------------------------------------- |
 | `0.2.<补丁号>` | 与 DSH 的 `0.2.<补丁号>` 对齐                 | DSH `0.2.2.x` ↔ 插件 `0.2.2.x`；DSH `0.2.1.x` ↔ 插件 `0.2.1.x` |
-| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.3`                                              |
-| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.3 <0.3.0`                           |
+| `-rc.N`        | 插件自己的预发布号，不要求与 DSH 的 rc 号一致 | 插件 `0.2.2-rc.4`                                              |
+| 兼容范围       | 以 `engines.dsh` 和上面的安装表为准           | `engines.dsh`: `>=0.2.2-rc.4 <0.3.0`                           |
 
 ### DSH Desktop
 
@@ -489,7 +489,7 @@ npm publish
 
 1. 提升 `package.json` 的 `version`，并在 [`CHANGELOG.md`](CHANGELOG.md) 追加对应条目；
 2. 提交并推送；
-3. 打 tag 并推送，例如 `git tag v0.2.2-rc.3 && git push origin v0.2.2-rc.3`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
+3. 打 tag 并推送，例如 `git tag v0.2.2-rc.4 && git push origin v0.2.2-rc.4`（tag 只用于标记该版本对应的提交，**不会**触发发布）；
 4. 手动 Run workflow，先 `dry_run=true` 跑一次，确认无误再 `dry_run=false`。
 
 工作流带「版本已存在就跳过」的守卫，重复触发不会重复发布同一个版本；忘改版本号时同样会被跳过，不会报错。守卫是 fail-closed 的：只有 registry 明确返回 404 才认为「未发布」，查询超时、限流或 5xx 会让工作流失败而不是继续发布。
@@ -533,6 +533,14 @@ test/                  单元与预设注册测试
 ## 后续版本更新计划
 
 - **评估内置 `apply_patch` 是否替换自定义实现**：DSH 0.2.2-rc.2 的 `@deepseek-ai/dsh-tool-fs` 新增了内置 `apply_patch` 工具（配置项 `applyPatch`，默认关闭）。本插件目前继续注册自己的 `apply_patch`；后续版本会在测试和评估后决定是否改用内置实现替换。
+
+## 已知问题（DSH 宿主，待修复）
+
+- **多子任务执行完后「任务」面板可能停在第一个任务**：任务被拆成多个待办（`todo_write`）时，全部子任务已完成、最终结果也已输出，但界面上的「任务」面板仍显示第一个任务在 `in_progress`，造成「任务没执行完」的错觉。
+  - 该面板由 DSH 宿主渲染：数据来自 `@deepseek-ai/dsh-tool-todo` 注册的 `todos` 会话投影，界面由 `@deepseek-ai/dsh-client-ui-conversation` 的 `TodoDock`/`TodoPanel` 绘制。本插件不注册 `conversation.input.dock`，也不渲染任何待办 UI，只通过提示词要求模型维护清单。
+  - 会话日志能证明数据侧是正确的：多步任务最后一次 `todo/write` 快照都是全部 `completed`，因此问题在宿主的投影刷新/渲染，而不是模型没更新或插件丢了事件。
+  - 对话流中的每张「更新任务清单」卡片按调用分别记录，第一张永远显示当时的初始清单，这是宿主的按调用记录设计，不是实时进度；实时进度请看输入框上方的「任务」面板。
+  - 已记录到 [`CHANGELOG.md`](CHANGELOG.md) 的 `0.2.2-rc.4` 条目，标记为 DSH 宿主固有问题，待 DSH 修复；本插件不做规避性改动。
 
 ## 已知限制
 
