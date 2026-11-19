@@ -2,6 +2,15 @@
 
 本文件记录 `dsh-plugin-codex-coding` 的发布变化，格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。版本号规则与 DSH 的对应关系见 README 的[版本策略](README.md#版本策略)。
 
+## [0.2.2-rc.5] - 2026-11-20
+
+### 变更
+
+- **版本线与 DSH 0.2.2-rc.5 对齐**：`engines.dsh` 下界从 `0.2.2-rc.4` 提升到 `>=0.2.2-rc.5 <0.3.0`，peer 依赖 `@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools` 同步收窄；开发依赖升到 `0.2.2-rc.5`。插件源码、提示词与工具行为没有变化。
+- **按 rc.4 → rc.5 的包内容核对适配**：对 npm 上 DSH 依赖树中的全部 `@deepseek-ai/*` 包逐包比较后，本插件直接消费的 `dsh-llm`、`dsh-tools`、`dsh-agent`、`dsh-session`、`dsh-system-prompt`、`dsh-fs-local`、`dsh-fs-sandbox`、`dsh-user-approval`、`dsh-scope`、`dsh-session-projection` 的 `lib`（含 `lib/types`）没有差异；`agent.model.select()`、`sessionProjections.snapshot()`、`agents.turnBoundaryOf()`、`ctx.fs.deleteFile()`、`ctx.tools.restrict()` 等调用点不需要改动。预设挂载的 `dsh-agent-preset`、`dsh-persona`、`dsh-tool-bash`、`dsh-tool-fs`、`dsh-tool-fs-search`、`dsh-tool-jobs`、`dsh-tool-todo`、`dsh-tool-skill`、`dsh-skill-filesystem` 与 compaction 相关包同样没有差异。
+- **Web 搜索相关变更不影响本插件挂载**：rc.5 的差异主要是 Web 搜索/设置相关包（`dsh-base`、`dsh-web`、`dsh-tool-web`、`dsh-web-search-deepseek`、`dsh-client-ui-settings-web-search`）、生成的 API 目录（`dsh-api-remotes`、`dsh-tool-cordis`、`dsh-client-modules`）与文档。本插件的 `@deepseek-ai/dsh-tool-web` 配置仍只有 `fetch: true` 与 `searchTimeoutMs: 60000`，该包 rc.5 的配置 schema 与类型声明未变；插件不设置 `searchProvider`，新的默认选择逻辑由宿主自行生效。
+- **宿主随附依赖未变**：`@deepseek-ai/cordis` `~4.1.0`、`@deepseek-ai/schemastery` `~3.19.0`、`zod` `4.6.6` 与 rc.4 相同，因此除版本线外不需要调整依赖。本机 DSH Desktop `0.2.2-rc.5` 下 `pnpm typecheck`、`pnpm test`、`pnpm build` 通过。
+
 ## [0.2.2-rc.4] - 2026-11-19
 
 ### 变更
@@ -148,6 +157,7 @@
 
 - 首个发布：Codex Coding 预设、`apply_patch` 补丁工具、问答 / 审查 / Codex 三模式工作流、推理等级自动切换、本地 Skill 与 DSH 插件工具开关。
 
+[0.2.2-rc.5]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.5
 [0.2.2-rc.4]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.4
 [0.2.2-rc.3]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.3
 [0.2.2-rc.2]: https://github.com/ygzhang-lab/dsh-plugin-codex-coding/releases/tag/v0.2.2-rc.2
